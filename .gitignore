@@ -1,0 +1,15 @@
+# MC4HOS build artifacts
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+**/oh_modules
+**/.cxx
+**/.hvigor
+*.hap
+*.hsp
+*.app
+.cxx
+hvigor-wrapper.js
+hvigor/hvigor-config.json5.bak

@@ -1,0 +1,71 @@
+// Copyright (C) 2026 MC4HOS Contributors
+// SPDX-License-Identifier: MPL-2.0
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// NOTE: DevEco Studio may normalize this file (e.g. drop an explicit
+// compileSdkVersion — it then comes from the IDE's installed SDK — and
+// reformat fields). Re-add this header if your IDE strips it.
+// JSON5 comments are "//" only.
+{
+  "app": {
+    "signingConfigs": [
+      // Configure signing in DevEco Studio: File > Project Structure >
+      // Signing Configs > "Automatically generate signature" (debug) or fill
+      // in your release certificate material. DevEco inserts the matching
+      // signingConfig here and references it from the product below.
+    ],
+    "products": [
+      {
+        "name": "default",
+        // No signingConfig reference while signingConfigs is empty — a
+        // dangling "signingConfig": "default" breaks hvigor sync. DevEco
+        // adds the reference automatically once signing is configured.
+        //
+        // HarmonyOS 6.1.1 — API version 24 (DevEco Studio 6.1.1 Release).
+        // For runtimeOS "HarmonyOS" the SDK strings MUST use the
+        // "<version>(<api>)" form, e.g. "6.1.1(24)". A bare "6.1.1" does
+        // not resolve against the installed HarmonyOS SDK and fails sync.
+        // Schema rule: compatibleSdkVersion <= targetSdkVersion <=
+        // compileSdkVersion; all must match the exact SDK build string
+        // shown in SDK Manager.
+        "compatibleSdkVersion": "6.1.1(24)",
+        "targetSdkVersion": "6.1.1(24)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+          // Note: externalNativeOptions intentionally lives ONLY in
+          // entry/build-profile.json5 (module level) — declaring it here
+          // as well duplicates the CMake invocation.
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

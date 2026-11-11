@@ -1,0 +1,19 @@
+// Copyright (C) 2026 MC4HOS Contributors
+// SPDX-License-Identifier: MPL-2.0
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+{
+  "app": {
+    "bundleName": "org.mc4hos.launcher",
+    "vendor": "mc4hos",
+    "versionCode": 1000000,
+    "versionName": "1.0.0",
+    // buildVersion is a required field of the DevEco 6.x project schema.
+    "buildVersion": "1",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name"
+  }
+}

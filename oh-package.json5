@@ -1,0 +1,13 @@
+{
+  "modelVersion": "6.1.1",
+  "name": "mc4hos",
+  "version": "1.0.0",
+  "description": "Minecraft: Java Edition launcher for HarmonyOS (clean-room, MPL-2.0)",
+  "main": "",
+  "author": "MC4HOS Contributors",
+  "license": "MPL-2.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

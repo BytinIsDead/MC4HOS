@@ -1,0 +1,16 @@
+# MC4HOS obfuscation rules (release builds).
+# ArkTS obfuscation is disabled by default while the native bridge matches
+# on string names; enable with care and keep the exported names below.
+#
+# Copyright (C) 2026 MC4HOS Contributors
+# SPDX-License-Identifier: MPL-2.0
+
+-keep-property-name
+startGame
+stopGame
+isGameRunning
+sendKeyEvent
+sendMouseButton
+sendMouseMove
+sendTouchEvent
+initialize

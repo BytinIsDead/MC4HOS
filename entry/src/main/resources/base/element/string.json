@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "MC4HOS — Minecraft: Java Edition launcher for HarmonyOS"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Launches Minecraft: Java Edition on HarmonyOS devices"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "MC4HOS"
+    },
+    {
+      "name": "perm_internet_reason",
+      "value": "Download game files and authenticate with Microsoft/Mojang services"
+    },
+    {
+      "name": "perm_network_info_reason",
+      "value": "Check connectivity before downloading game assets"
+    }
+  ]
+}
