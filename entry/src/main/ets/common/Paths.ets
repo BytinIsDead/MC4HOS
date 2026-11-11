@@ -161,6 +161,20 @@ export class Paths {
     }
   }
 
+  /**
+   * This SDK's fs API has no writeTextSync; text writes go through an fd.
+   * Creates/truncates the target file, then writes the whole string.
+   */
+  public static writeTextFileSync(path: string, text: string): void {
+    const file: fs.File =
+      fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+    try {
+      fs.writeSync(file.fd, text);
+    } finally {
+      fs.closeSync(file.fd);
+    }
+  }
+
   private static cachedAbi: string = '';
 
   /**

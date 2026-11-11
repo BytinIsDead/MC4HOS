@@ -26,24 +26,40 @@ export interface HttpResult {
 const TAG: string = 'Http';
 const DEFAULT_TIMEOUT_MS: number = 30000;
 
-export async function getJson(url: string, headers: Record<string, string> = {}): Promise<HttpResult> {
-  return request('GET', url, headers, '');
+function mergeHeaders(a?: Record<string, string>,
+  b?: Record<string, string>): Record<string, string> {
+  const merged: Record<string, string> = {};
+  if (a !== undefined) {
+    const keys: Array<string> = Object.keys(a);
+    for (const k of keys) {
+      merged[k] = a[k];
+    }
+  }
+  if (b !== undefined) {
+    const keys: Array<string> = Object.keys(b);
+    for (const k of keys) {
+      merged[k] = b[k];
+    }
+  }
+  return merged;
 }
 
-export async function postJson(url: string, body: string, headers: Record<string, string> = {}): Promise<HttpResult> {
-  const merged: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...headers
-  };
-  return request('POST', url, merged, body);
+export async function getJson(url: string,
+  headers?: Record<string, string>): Promise<HttpResult> {
+  return request('GET', url, mergeHeaders(headers), '');
 }
 
-export async function postForm(url: string, body: string, headers: Record<string, string> = {}): Promise<HttpResult> {
-  const merged: Record<string, string> = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    ...headers
-  };
-  return request('POST', url, merged, body);
+export async function postJson(url: string, body: string,
+  headers?: Record<string, string>): Promise<HttpResult> {
+  const base: Record<string, string> = { 'Content-Type': 'application/json' };
+  return request('POST', url, mergeHeaders(base, headers), body);
+}
+
+export async function postForm(url: string, body: string,
+  headers?: Record<string, string>): Promise<HttpResult> {
+  const base: Record<string, string> =
+    { 'Content-Type': 'application/x-www-form-urlencoded' };
+  return request('POST', url, mergeHeaders(base, headers), body);
 }
 
 async function request(method: string, url: string, headers: Record<string, string>, body: string): Promise<HttpResult> {
@@ -87,6 +103,7 @@ export async function downloadToFile(url: string, options: FileDownloadOptions):
   let received: number = 0;
   let total: number = 0;
   let lastReported: number = 0;
+  const requestHeaders: Record<string, string> = mergeHeaders(options.headers);
   try {
     ensureParentDir(partPath);
     fs.unlinkSync(partPath);
@@ -119,7 +136,7 @@ export async function downloadToFile(url: string, options: FileDownloadOptions):
 
     const code: number = await client.requestInStream(url, {
       method: http.RequestMethod.GET,
-      header: options.headers ?? {},
+      header: requestHeaders,
       connectTimeout: DEFAULT_TIMEOUT_MS,
       readTimeout: 120000
     } as http.HttpRequestOptions);

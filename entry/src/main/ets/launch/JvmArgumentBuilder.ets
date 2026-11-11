@@ -183,7 +183,7 @@ export class JvmArgumentBuilder {
 
     // Our clean-room Java-side bridge classes (input dispatch etc.), when
     // installed by the natives pipeline.
-    const bridgeJar: string = `${Paths.baseDir()}/bridge/mc4hos-bridge.jar`;
+    const bridgeJar: string = `${Paths.base()}/bridge/mc4hos-bridge.jar`;
     if (fs.accessSync(bridgeJar)) {
       jars.push(bridgeJar);
     }

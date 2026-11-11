@@ -33,19 +33,18 @@ export interface NativeLaunchConfig {
   selfTest: boolean;
 }
 
-/** startGame() return codes (mirror of jvm_loader.h). */
-export const START_OK: number = 0;
-export const ERR_ALREADY_RUNNING: number = 1;
-export const ERR_NO_JAVA_HOME: number = 2;
-export const ERR_LIB_JVM_MISSING: number = 3;
-export const ERR_CREATE_FAILED: number = 4;
+// startGame() return codes (mirror of jvm_loader.h):
+//   0 OK | 1 already running | 2 missing javaHome/classPath/mainClass
+//   3 dlopen(libjvm.so) failed | 4 JNI_CreateJavaVM failed.
+// They are returned as the resolved number; no exported constants exist on
+// the native module, so they are documented here instead of declared.
 
 /** Installs the native log pump and routes JVM output to `logCallback`. */
 export const initialize: (logCallback: (line: string) => void) => void;
 
 /**
  * dlopen()s libjvm.so, creates the VM and invokes the main class on a
- * dedicated thread. Resolves with a START_*/ERR_* code immediately.
+ * dedicated thread. Resolves with one of the return codes documented above.
  */
 export const startGame: (config: NativeLaunchConfig) => Promise<number>;
 

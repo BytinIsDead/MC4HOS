@@ -37,7 +37,8 @@ export class DownloadManager {
   public static subscribeProgress(
     callback: (label: string, received: number, total: number, finished: boolean, failed: boolean) => void
   ): void {
-    emitter.on({ eventId: DL_PROGRESS_EVENT_ID }, (event: emitter.EventData) => {
+    const progressEvent: emitter.InnerEvent = { eventId: DL_PROGRESS_EVENT_ID };
+    emitter.on(progressEvent, (event: emitter.EventData) => {
       const data: Record<string, Object> | undefined = event.data;
       if (data === undefined) {
         return;

@@ -148,18 +148,14 @@ function u8ToStr(u: Uint8Array): string {
 
 async function assetSetString(alias: string, value: string): Promise<void> {
   try {
+    // Prefer an in-place update when the alias already exists (update takes
+    // the search query and the attribute map as separate arguments).
     const query: asset.AssetMap = new Map();
     query.set(asset.Tag.ALIAS, strToU8(alias));
-    // Update if present, otherwise add.
-    const existing: asset.AssetMap = new Map();
-    existing.set(asset.Tag.ALIAS, strToU8(alias));
-    existing.set(asset.Tag.RETURN_TYPE, asset.ReturnType.ALL);
+    const attrs: asset.AssetMap = new Map();
+    attrs.set(asset.Tag.SECRET, strToU8(value));
     try {
-      await asset.get(existing);
-      const update: asset.AssetMap = new Map();
-      update.set(asset.Tag.ALIAS, strToU8(alias));
-      update.set(asset.Tag.SECRET, strToU8(value));
-      await asset.update(update);
+      await asset.update(query, attrs);
       return;
     } catch (notFoundErr) {
       // fall through to add
@@ -167,7 +163,7 @@ async function assetSetString(alias: string, value: string): Promise<void> {
     const add: asset.AssetMap = new Map();
     add.set(asset.Tag.ALIAS, strToU8(alias));
     add.set(asset.Tag.SECRET, strToU8(value));
-    add.set(asset.Tag.SYNC_TYPE, asset.SyncType.DEVICE_SYNC_OK);
+    add.set(asset.Tag.SYNC_TYPE, asset.SyncType.NEVER);
     await asset.add(add);
   } catch (err) {
     const e = err as Error;
@@ -180,8 +176,12 @@ async function assetGetString(alias: string): Promise<string> {
     const query: asset.AssetMap = new Map();
     query.set(asset.Tag.ALIAS, strToU8(alias));
     query.set(asset.Tag.RETURN_TYPE, asset.ReturnType.ALL);
-    const result: asset.AssetMap = await asset.get(query);
-    const secret: Uint8Array | boolean | number | undefined = result.get(asset.Tag.SECRET);
+    const results: Array<asset.AssetMap> = await asset.query(query);
+    if (results.length === 0) {
+      return '';
+    }
+    const secret: Uint8Array | boolean | number | undefined =
+      results[0].get(asset.Tag.SECRET);
     if (secret === undefined || typeof secret !== 'object') {
       return '';
     }

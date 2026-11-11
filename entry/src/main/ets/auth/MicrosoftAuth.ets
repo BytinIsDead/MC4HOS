@@ -10,7 +10,7 @@
 import { getJson, postJson, postForm } from '../common/Http';
 import { JsonObj, parseJson, getStr, getNum, getArr, getObj } from '../common/JsonReader';
 import { Logger } from '../common/Logger';
-import { AccountProfile, AuthSecrets, DeviceCodeResponse, AuthStateUpdate } from './AuthModels';
+import { AccountProfile, AuthSecrets, DeviceCodeResponse, AuthStateUpdate, AuthResult, AuthPhase } from './AuthModels';
 
 /**
  * Microsoft account sign-in via the OAuth 2.0 Device Authorization Grant
@@ -79,11 +79,11 @@ export class MicrosoftAuth {
   public static async pollAndAuthorize(
     device: DeviceCodeResponse,
     onUpdate?: (update: AuthStateUpdate) => void
-  ): Promise<{ profile: AccountProfile, secrets: AuthSecrets } | null> {
+  ): Promise<AuthResult | null> {
     const report = (phase: string, message: string): void => {
       Logger.info(TAG, `[${phase}] ${message}`);
       if (onUpdate !== undefined) {
-        onUpdate({ phase: phase as AuthStateUpdate['phase'], message: message });
+        onUpdate({ phase: phase as AuthPhase, message: message });
       }
     };
 
@@ -135,11 +135,13 @@ export class MicrosoftAuth {
 
     // --- XBL user token ---
     report('exchanging_xbl', 'Requesting Xbox Live token…');
-    const xblJson: JsonObj | null = await MicrosoftAuth.xblRequest(XBL_AUTH_URL, {
+    const xblProps: Record<string, Object> = {
       AuthMethod: 'RPS',
       SiteName: 'user.auth.xboxlive.com',
       RpsTicket: `d=${msAccessToken}`
-    }, `d=${msAccessToken}`);
+    };
+    const xblJson: JsonObj | null =
+      await MicrosoftAuth.xblRequest(XBL_AUTH_URL, xblProps, `d=${msAccessToken}`);
     if (xblJson === null) {
       report('error', 'Xbox Live authentication failed');
       return null;
@@ -149,10 +151,12 @@ export class MicrosoftAuth {
 
     // --- XSTS token (Minecraft relying party) ---
     report('exchanging_xbl', 'Requesting XSTS ticket…');
-    const xstsJson: JsonObj | null = await MicrosoftAuth.xblRequest(XSTS_AUTH_URL, {
+    const xstsProps: Record<string, Object> = {
       SandboxId: 'RETAIL',
       UserTokens: [xblToken]
-    }, undefined, 'rp://api.minecraftservices.com/');
+    };
+    const xstsJson: JsonObj | null = await MicrosoftAuth.xblRequest(
+      XSTS_AUTH_URL, xstsProps, undefined, 'rp://api.minecraftservices.com/');
     if (xstsJson === null) {
       report('error', 'XSTS authorization failed (is your account an Xbox account?)');
       return null;
@@ -163,9 +167,11 @@ export class MicrosoftAuth {
 
     // --- Minecraft services access token ---
     report('exchanging_xbl', 'Signing in to Minecraft services…');
+    const loginPayload: Record<string, string> =
+      { identityToken: `XBL3.0 x=${uhs};${xstsToken}` };
+    const acceptHeaders: Record<string, string> = { 'Accept': 'application/json' };
     const mcResp = await postJson(MC_LOGIN_URL,
-      JSON.stringify({ identityToken: `XBL3.0 x=${uhs};${xstsToken}` }),
-      { 'Accept': 'application/json' });
+      JSON.stringify(loginPayload), acceptHeaders);
     if (!mcResp.ok) {
       report('error', `Minecraft login failed: HTTP ${mcResp.code}`);
       return null;
@@ -225,25 +231,31 @@ export class MicrosoftAuth {
       return null;
     }
     // Refresh the Minecraft services token as well.
-    const xblJson: JsonObj | null = await MicrosoftAuth.xblRequest(XBL_AUTH_URL, {
+    const xblProps: Record<string, Object> = {
       AuthMethod: 'RPS',
       SiteName: 'user.auth.xboxlive.com',
       RpsTicket: `d=${newAccess}`
-    }, `d=${newAccess}`);
+    };
+    const xblJson: JsonObj | null =
+      await MicrosoftAuth.xblRequest(XBL_AUTH_URL, xblProps, `d=${newAccess}`);
     if (xblJson === null) {
       return null;
     }
-    const xstsJson: JsonObj | null = await MicrosoftAuth.xblRequest(XSTS_AUTH_URL, {
+    const xstsProps: Record<string, Object> = {
       SandboxId: 'RETAIL',
       UserTokens: [getStr(xblJson, 'Token')]
-    }, undefined, 'rp://api.minecraftservices.com/');
+    };
+    const xstsJson: JsonObj | null = await MicrosoftAuth.xblRequest(
+      XSTS_AUTH_URL, xstsProps, undefined, 'rp://api.minecraftservices.com/');
     if (xstsJson === null) {
       return null;
     }
     const uhs: string = MicrosoftAuth.firstUserHash(xstsJson);
+    const loginPayload: Record<string, string> =
+      { identityToken: `XBL3.0 x=${uhs};${getStr(xstsJson, 'Token')}` };
+    const acceptHeaders: Record<string, string> = { 'Accept': 'application/json' };
     const mcResp = await postJson(MC_LOGIN_URL,
-      JSON.stringify({ identityToken: `XBL3.0 x=${uhs};${getStr(xstsJson, 'Token')}` }),
-      { 'Accept': 'application/json' });
+      JSON.stringify(loginPayload), acceptHeaders);
     if (!mcResp.ok) {
       return null;
     }

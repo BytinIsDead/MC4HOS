@@ -7,8 +7,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import fs from '@ohos.file.fs';
-import { ConsoleBuffer, LogLine, LOG_LEVEL_WARN, LOG_LEVEL_ERROR } from '../common/Logger';
+import emitter from '@ohos.events.emitter';
+import { ConsoleBuffer, LogLine, LOG_LEVEL_WARN, LOG_LEVEL_ERROR, CONSOLE_EVENT_ID } from '../common/Logger';
 import { Paths } from '../common/Paths';
 
 /**
@@ -21,9 +21,34 @@ export struct ConsolePage {
   @State lines: Array<LogLine> = [];
   @State autoscroll: boolean = true;
   private scroller: Scroller = new Scroller();
+  private listener: ((event: emitter.EventData) => void) | null = null;
 
   aboutToAppear(): void {
     this.lines = ConsoleBuffer.snapshot();
+    this.listener = (event: emitter.EventData) => {
+      const data: Record<string, Object> | undefined = event.data;
+      if (data === undefined) {
+        return;
+      }
+      const message: string = data['message'] as string;
+      if (message === undefined || message.length === 0) {
+        return;
+      }
+      this.lines = ConsoleBuffer.snapshot();
+      if (this.autoscroll) {
+        this.scroller.scrollEdge(Edge.Bottom);
+      }
+    };
+    const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
+    emitter.on(consoleEvent, this.listener);
+  }
+
+  aboutToDisappear(): void {
+    if (this.listener !== null) {
+      const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
+      emitter.off(consoleEvent, this.listener);
+      this.listener = null;
+    }
   }
 
   private colorFor(level: number): string {
@@ -40,7 +65,7 @@ export struct ConsolePage {
     const path: string = `${Paths.logsDir()}/console-${Date.now()}.log`;
     try {
       Paths.ensureDir(Paths.logsDir());
-      fs.writeTextSync(path, this.lines.map((l: LogLine) =>
+      Paths.writeTextFileSync(path, this.lines.map((l: LogLine) =>
         `[${new Date(l.timestampMs).toISOString()}] ${l.tag}: ${l.message}`).join('\n'));
       ConsoleBuffer.push({
         level: 1, tag: 'Console', message: `log saved to ${path}`, timestampMs: Date.now()
@@ -103,11 +128,6 @@ export struct ConsolePage {
       }
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
-      .onScrollIndex((_start: number, _end: number) => {
-        if (this.autoscroll) {
-          this.scroller.scrollEdge(Edge.Bottom);
-        }
-      })
     }
     .width('100%')
     .height('100%')

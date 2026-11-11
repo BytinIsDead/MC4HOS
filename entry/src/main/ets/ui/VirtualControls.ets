@@ -28,6 +28,12 @@ const ACTION_MOVE: number = 2;
 const ACTION_CANCEL: number = 3;
 const RAW_TOUCH_ID: number = -7; // virtual overlay pointer id space
 
+/** Drag-edit position, in percent of the overlay canvas. */
+interface DragPos {
+  x: number;
+  y: number;
+}
+
 @Component
 export struct VirtualControls {
   @State layout: ControlLayoutSpec = { layoutVersion: 1, buttons: [], mouseSensitivity: 1.0 };
@@ -156,7 +162,17 @@ export struct VirtualControls {
         this.releaseKeys(spec.keyCodes);
       }
     })
-    .gesture(this.editMode ? this.elementPan(spec) : undefined)
+    .gesture(this.editMode ? PanGesture({ fingers: 1, distance: 1 })
+      .onActionStart(() => {
+        this.dragStart.delete(spec.id);
+      })
+      .onActionUpdate((e: GestureEvent) => this.dragElement(spec, e))
+      .onActionEnd(() => {
+        this.dragStart.delete(spec.id);
+        if (this.onLayoutEdited !== null) {
+          this.onLayoutEdited(this.layout);
+        }
+      }) : undefined)
   }
 
   @Builder
@@ -185,7 +201,17 @@ export struct VirtualControls {
         sendMouseButton(spec.mouseButton, 1);
       }
     })
-    .gesture(this.editMode ? this.elementPan(spec) : undefined)
+    .gesture(this.editMode ? PanGesture({ fingers: 1, distance: 1 })
+      .onActionStart(() => {
+        this.dragStart.delete(spec.id);
+      })
+      .onActionUpdate((e: GestureEvent) => this.dragElement(spec, e))
+      .onActionEnd(() => {
+        this.dragStart.delete(spec.id);
+        if (this.onLayoutEdited !== null) {
+          this.onLayoutEdited(this.layout);
+        }
+      }) : undefined)
   }
 
   @Builder
@@ -206,7 +232,17 @@ export struct VirtualControls {
     .height(spec.sizeVp)
     .position({ x: `${spec.xPercent}%`, y: `${spec.yPercent}%` })
     .markAnchor({ x: spec.sizeVp / 2, y: spec.sizeVp / 2 })
-    .gesture(this.editMode ? this.elementPan(spec) : undefined)
+    .gesture(this.editMode ? PanGesture({ fingers: 1, distance: 1 })
+      .onActionStart(() => {
+        this.dragStart.delete(spec.id);
+      })
+      .onActionUpdate((e: GestureEvent) => this.dragElement(spec, e))
+      .onActionEnd(() => {
+        this.dragStart.delete(spec.id);
+        if (this.onLayoutEdited !== null) {
+          this.onLayoutEdited(this.layout);
+        }
+      }) : undefined)
   }
 
   @Builder
@@ -250,33 +286,20 @@ export struct VirtualControls {
     }
   }
 
-  /** Pan gesture used to reposition elements in edit mode. */
-  private elementPan(spec: ControlButtonSpec): PanGesture {
-    return PanGesture({ fingers: 1, distance: 1 })
-      .onActionStart(() => {
-        this.dragStart.delete(spec.id);
-      })
-      .onActionUpdate((e: GestureEvent) => this.dragElement(spec, e))
-      .onActionEnd(() => {
-        this.dragStart.delete(spec.id);
-        if (this.onLayoutEdited !== null) {
-          this.onLayoutEdited(this.layout);
-        }
-      });
-  }
-
-  private dragStart: Map<string, { x: number, y: number }> = new Map();
+  /** Drag-edit position bookkeeping. Gesture classes cannot be used as
+   * ArkTS return types, so the pan chains are written inline per builder. */
+  private dragStart: Map<string, DragPos> = new Map();
   @State canvasWidth: number = 1;
   @State canvasHeight: number = 1;
 
-  private dragBase(id: string): { x: number, y: number } {
+  private dragBase(id: string): DragPos {
     const known = this.dragStart.get(id);
     if (known !== undefined) {
       return known;
     }
     const spec: ControlButtonSpec | undefined =
       this.layout.buttons.find((b: ControlButtonSpec) => b.id === id);
-    const pos: { x: number, y: number } = {
+    const pos: DragPos = {
       x: spec !== undefined ? spec.xPercent : 50,
       y: spec !== undefined ? spec.yPercent : 50
     };

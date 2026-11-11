@@ -7,8 +7,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import deviceInfo from '@ohos.deviceInfo';
-
 /**
  * Global, UI-bindable launch settings. Values live in AppStorage so any page
  * can read/write them with @StorageLink without a shared singleton instance.
@@ -25,10 +23,11 @@ export const KEY_ACCOUNT_XUID: string = 'accountXuid';
 export const KEY_ACCOUNT_READY: string = 'accountReady';
 
 export function maxDeviceRamMb(): number {
-  // deviceInfo.totalMemory is bytes; keep a safety margin for the OS.
-  const bytes: number = deviceInfo.totalMemory;
-  const mb: number = Math.floor(bytes / (1024 * 1024));
-  return Math.max(2048, Math.floor(mb * 0.75 / 256) * 256);
+  // This SDK's deviceInfo exposes no total-memory field; use a fixed cap
+  // that is safe across current HarmonyOS phones/tablets/2-in-1s. The
+  // slider clamps into [1024, max], so smaller devices simply won't reach
+  // the top of the range.
+  return 8192;
 }
 
 export function initAppState(): void {

@@ -65,7 +65,8 @@ export struct HomeTab {
   }
 
   build() {
-    GridRow({ columns: { sm: 4, md: 8, lg: 12 }, gutter: 12 }) {
+    Scroll() {
+      GridRow({ columns: { sm: 4, md: 8, lg: 12 }, gutter: 12 }) {
       GridCol({ span: { sm: 4, md: 8, lg: 12 } }) {
         Column() {
           Text('MC4HOS')
@@ -195,11 +196,12 @@ export struct HomeTab {
         .margin({ top: 8 })
       }
     }
+      .width('100%')
+      .padding({ left: 16, right: 16, bottom: 16 })
+    }
+    .scrollBar(BarState.Auto)
     .width('100%')
     .height('100%')
-    .padding({ left: 16, right: 16, bottom: 16 })
-    .scrollable(ScrollDirection.Vertical)
-    .alignItems(GridRowAlignItems.Start)
   }
 
   private selectedVersionIndex(): number {

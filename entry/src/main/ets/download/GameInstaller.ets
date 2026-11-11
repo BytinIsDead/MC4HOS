@@ -14,7 +14,7 @@ import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
 import { DownloadSpec } from './DownloadTask';
 import { DownloadBatchResult, DownloadManagerInstance } from './DownloadManager';
-import { VersionJson, DEFAULT_ASSETS_BASE } from './VersionManifest';
+import { VersionJson, RuleSet, DEFAULT_ASSETS_BASE } from './VersionManifest';
 
 /**
  * Materializes a fully playable version tree: client jar, dependency
@@ -131,7 +131,7 @@ export class GameInstaller {
         return '';
       }
       Paths.ensureDir(Paths.indexesDir());
-      fsWriteText(indexPath, resp.body);
+      Paths.writeTextFileSync(indexPath, resp.body);
     }
 
     const root: JsonObj | null = parseJson(fsReadText(indexPath));
@@ -189,8 +189,7 @@ export class GameInstaller {
    * Rule evaluation used for downloads. The launcher maps its POSIX runtime
    * onto the "linux" OS family; arm64/x86_64 are both treated as 64-bit.
    */
-  public static rulesAllow(rules: Array<{ action: string, osName?: string, osArch?: string,
-    features?: JsonObj }>): boolean {
+  public static rulesAllow(rules: Array<RuleSet>): boolean {
     let allowed: boolean = true;
     for (const rule of rules) {
       const featureKeys: Array<string> = rule.features !== undefined ? Object.keys(rule.features) : [];
@@ -226,8 +225,4 @@ function fsAccess(path: string): boolean {
 
 function fsReadText(path: string): string {
   return fs.readTextSync(path);
-}
-
-function fsWriteText(path: string, text: string): void {
-  fs.writeTextSync(path, text);
 }

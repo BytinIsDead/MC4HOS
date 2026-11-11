@@ -31,6 +31,8 @@ const TAG: string = 'JavaRuntime';
 export interface RuntimeDescriptor {
   name: string;
   javaMajor: number;
+  /** ABI the runtime was built for ("arm64-v8a" / "x86_64"). */
+  abi?: string;
   homePath: string;
 }
 
@@ -174,13 +176,13 @@ export class JavaRuntimeManager {
         // best effort
       }
     }
-    const descriptor: JsonObj = {
+    const descriptor: RuntimeDescriptor = {
       name: pack.name,
       javaMajor: pack.javaMajor,
       abi: pack.abi,
       homePath: destDir
     };
-    fs.writeTextSync(marker, JSON.stringify(descriptor));
+    Paths.writeTextFileSync(marker, JSON.stringify(descriptor));
     return true;
   }
 

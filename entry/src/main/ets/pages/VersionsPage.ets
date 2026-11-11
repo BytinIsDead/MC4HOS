@@ -102,7 +102,7 @@ export struct VersionsPage {
           .fontWeight(FontWeight.Bold)
           .fontColor('#FFFFFF')
         Blank()
-        Toggle({ type: ToggleType.Toggle, isOn: this.filterReleasesOnly })
+        Toggle({ type: ToggleType.Checkbox, isOn: this.filterReleasesOnly })
           .onChange((isOn: boolean) => {
             this.filterReleasesOnly = isOn;
           })
@@ -132,37 +132,39 @@ export struct VersionsPage {
       List({ space: 6 }) {
         ForEach(this.entries.filter((e: VersionEntry) =>
           !this.filterReleasesOnly || e.type === 'release'), (entry: VersionEntry) => {
-          Row() {
-            Column() {
-              Text(entry.id)
-                .fontSize(15)
-                .fontColor('#FFFFFF')
-              Text(`${entry.type} · ${entry.releaseTime.substring(0, 10)}`)
-                .fontSize(11)
-                .fontColor(this.typeColor(entry.type))
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
+          ListItem() {
+            Row() {
+              Column() {
+                Text(entry.id)
+                  .fontSize(15)
+                  .fontColor('#FFFFFF')
+                Text(`${entry.type} · ${entry.releaseTime.substring(0, 10)}`)
+                  .fontSize(11)
+                  .fontColor(this.typeColor(entry.type))
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
 
-            if (this.isInstalled(entry.id)) {
-              Text(this.selectedVersion === entry.id ? 'ACTIVE' : 'installed')
-                .fontSize(11)
-                .fontColor(this.selectedVersion === entry.id ? '#63C36A' : '#8FA0B3')
-                .margin({ right: 8 })
+              if (this.isInstalled(entry.id)) {
+                Text(this.selectedVersion === entry.id ? 'ACTIVE' : 'installed')
+                  .fontSize(11)
+                  .fontColor(this.selectedVersion === entry.id ? '#63C36A' : '#8FA0B3')
+                  .margin({ right: 8 })
+              }
+              Button(this.isInstalled(entry.id) ? 'Re-fetch' : 'Install')
+                .height(32)
+                .fontSize(12)
+                .backgroundColor('#2A3340')
+                .enabled(!this.busy)
+                .onClick(() => {
+                  this.download(entry);
+                })
             }
-            Button(this.isInstalled(entry.id) ? 'Re-fetch' : 'Install')
-              .height(32)
-              .fontSize(12)
-              .backgroundColor('#2A3340')
-              .enabled(!this.busy)
-              .onClick(() => {
-                this.download(entry);
-              })
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+            .borderRadius(8)
+            .backgroundColor('#1F2430')
           }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-          .borderRadius(8)
-          .backgroundColor('#1F2430')
         }, (entry: VersionEntry) => entry.id)
       }
       .layoutWeight(1)

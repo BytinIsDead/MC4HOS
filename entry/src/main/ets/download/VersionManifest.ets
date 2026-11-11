@@ -118,7 +118,7 @@ export class VersionManifest {
     if (refreshNetwork || this.entries.length === 0) {
       const resp = await getJson(MANIFEST_URL);
       if (resp.ok) {
-        fs.writeTextSync(Paths.manifestCachePath(), resp.body);
+        Paths.writeTextFileSync(Paths.manifestCachePath(), resp.body);
         this.parseManifest(resp.body);
         Logger.info(TAG, `manifest fetched: ${this.entries.length} versions`);
       } else if (this.entries.length === 0) {
@@ -171,7 +171,7 @@ export class VersionManifest {
         Logger.error(TAG, `version json fetch failed for ${versionId}: HTTP ${resp.code}`);
         return null;
       }
-      fs.writeTextSync(jsonPath, resp.body);
+      Paths.writeTextFileSync(jsonPath, resp.body);
       body = resp.body;
     }
     if (body.length === 0) {

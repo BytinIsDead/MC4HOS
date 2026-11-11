@@ -32,6 +32,12 @@ export interface AuthSecrets {
   mcAccessToken: string;
 }
 
+/** Terminal result of a successful device-code login chain. */
+export interface AuthResult {
+  profile: AccountProfile;
+  secrets: AuthSecrets;
+}
+
 /** Device-code flow initiation response (RFC 8628 §3.2). */
 export interface DeviceCodeResponse {
   deviceCode: string;
