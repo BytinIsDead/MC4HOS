@@ -10,6 +10,7 @@
 {
   "name": "mc4hos_core.so",
   "types": "./index.d.ts",
+  "main": "./index.d.ts",
   "version": "1.0.0",
   "description": "MC4HOS native core (NAPI/JVM bridge)",
   "license": "MPL-2.0-no-copyleft-exception",

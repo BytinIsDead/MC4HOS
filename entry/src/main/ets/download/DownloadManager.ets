@@ -10,7 +10,8 @@
 import { taskpool } from '@kit.ArkTS';
 import emitter from '@ohos.events.emitter';
 import { Logger } from '../common/Logger';
-import { DownloadSpec, DownloadResult, downloadOne, DL_PROGRESS_EVENT_ID } from './DownloadTask';
+import { DownloadSpec, DownloadResult, DL_PROGRESS_EVENT_ID } from './DownloadShared';
+import { downloadOne } from './DownloadTask';
 
 /**
  * Threaded download orchestrator. Schedules a fixed-size pool of taskpool

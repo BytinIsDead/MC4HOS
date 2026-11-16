@@ -124,8 +124,10 @@ jobs:
           hvigorw --version || true
           node --version || true
 
-      - name: Install oh_modules
-        run: ohpm install
+      - name: Install oh_modules (root + entry)
+        run: |
+          ohpm install
+          cd entry && ohpm install
 
       - name: Build HAP (debug, unsigned)
         run: hvigorw --mode module -p module=entry@default -p product=default assembleHap

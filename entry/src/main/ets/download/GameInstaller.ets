@@ -12,7 +12,7 @@ import { getJson } from '../common/Http';
 import { JsonObj, parseJson, getStr, getNum, getObj } from '../common/JsonReader';
 import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
-import { DownloadSpec } from './DownloadTask';
+import { DownloadSpec } from './DownloadShared';
 import { DownloadBatchResult, DownloadManagerInstance } from './DownloadManager';
 import { VersionJson, RuleSet, DEFAULT_ASSETS_BASE } from './VersionManifest';
 
