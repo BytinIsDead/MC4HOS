@@ -12,7 +12,7 @@
  */
 
 {
-  "name": "mc4hos_core.so",
+  "name": "libmc4hos_core.so",
   "types": "./index.d.ts",
   "version": "",
   "description": "MC4HOS native core (NAPI/JVM bridge)"

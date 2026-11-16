@@ -7,7 +7,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { sendKeyEvent, sendMouseButton, sendMouseMove, sendTouchEvent } from 'mc4hos_core.so';
+import { sendKeyEvent, sendMouseButton, sendMouseMove, sendTouchEvent } from 'libmc4hos_core.so';
 import {
   ControlButtonSpec, ControlLayoutSpec, GlfwKeys, GlfwMouse
 } from './ControlLayout';

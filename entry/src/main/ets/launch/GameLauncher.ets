@@ -21,7 +21,7 @@ import {
   startGame,
   stopGame,
   isGameRunning
-} from 'mc4hos_core.so';
+} from 'libmc4hos_core.so';
 
 /**
  * End-to-end launch pipeline:

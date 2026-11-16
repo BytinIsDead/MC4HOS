@@ -15,6 +15,6 @@
   "author": "MC4HOS Contributors",
   "license": "MPL-2.0-no-copyleft-exception",
   "dependencies": {
-    "mc4hos_core.so": "file:./src/main/cpp/types/mc4hos_core"
+    "libmc4hos_core.so": "file:./src/main/cpp/types/libmc4hos_core"
   }
 }

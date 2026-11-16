@@ -170,6 +170,7 @@ The requested scope is fixed to `XboxLive.signin offline_access` in
 | `dlopen(libjvm) failed` in console | JRE pack not installed under `jvm/<name>/lib/server/libjvm.so` |
 | `Failed to get a resolved OhmUrl for "...index.d.ts"` at CompileArkTS | so-type-package resolution is bypassed entirely: the import types are declared ambiently in `entry/src/main/ets/native/Mc4hosCoreNative.d.ts` (declare module 'mc4hos_core.so'), and entry/oh-package.json5 carries no file: dependency for it. Known contributing factors (entry-level `ohpm install`, `useNormalizedOHMUrl`, lock drift) are documented in the git history |
 | `Concurrent function should only use import variable or local variable` | taskpool `@Concurrent` functions may only reference imports/locals — shared helpers must live in an imported module (`DownloadShared.ets`) |
+| `Failed to get a resolved OhmUrl for "hvigor_ignore_..."` on `.so` imports | the native module name must match `/^lib\S+\.so/` — rename to `lib<name>.so` (types dir, oh-package name, entry dependency, all ArkTS imports). Root cause found by reading `tsc-resolve.js` in hvigor-arkts-compose |
 
 ### Local native verification (no device needed)
 

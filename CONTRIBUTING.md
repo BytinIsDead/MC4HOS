@@ -42,6 +42,7 @@ because each one broke a real build.
 | ArkTS `Record<string, Object>` literals | values must be object **references** — primitives/arrays are rejected as "untyped"; use a declared interface or bracket assignment (`payload['key'] = v`) |
 | `XComponent({...})` on API 24 | classic overload field is **`libraryname`** (not `library`); `XComponentOptions` takes `type` + required `controller` |
 | `emitter.on(event, cb)` | `cb` must be a **non-null** local — nullable `\| null` fields fail every overload |
+| Native module names | the import specifier and oh-package name **MUST start with `lib`** (`libmc4hos_core.so`) — hvigor's resolver fast-paths `/^lib\S+\.so/` only; other names fail OhmUrl resolution (root cause of 9 failed CI runs) |
 
 DevEco Studio may rewrite these configs during sync (it can drop an explicit
 `compileSdkVersion` or strip license headers) — re-add headers if the IDE
