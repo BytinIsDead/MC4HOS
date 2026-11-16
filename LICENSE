@@ -387,3 +387,15 @@ If it is not possible or desirable to put the notice in a particular
 file, then You may include the notice in a location (such as a LICENSE
 file in a relevant directory) in a source distribution or in a compiled
 executable provided that You distribute the executable to end users.
+
+Exhibit B - "Incompatible With Secondary Licenses" Notice
+---------------------------------------------------------
+
+  This Source Code Form is "Incompatible With Secondary Licenses", as
+  defined by the Mozilla Public License, v. 2.0.
+
+This Covered Work is distributed with the Exhibit B notice appended: it is
+offered WITHOUT the Secondary Licenses defined in Section 1.2.11 of this
+License (i.e., downstream Works may not combine it with code licensed under
+the Apache License 2.0 or other Secondary Licenses). The SPDX expression for
+this Covered Work is MPL-2.0-no-copyleft-exception.

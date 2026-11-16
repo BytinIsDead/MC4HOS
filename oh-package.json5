@@ -1,3 +1,16 @@
+/**
+ * Copyright (C) 2026 MC4HOS Contributors
+ * SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * NOTE: DevEco Studio may rewrite this file on sync (it can strip comments
+ * and normalize versions). If the header disappears, re-add it —
+ * scripts/check_mpl_headers.py enforces it in CI.
+ */
+
 {
   "modelVersion": "6.1.1",
   "name": "mc4hos",
@@ -5,7 +18,7 @@
   "description": "Minecraft: Java Edition launcher for HarmonyOS (clean-room, MPL-2.0)",
   "main": "",
   "author": "MC4HOS Contributors",
-  "license": "MPL-2.0",
+  "license": "MPL-2.0-no-copyleft-exception",
   "dependencies": {},
   "devDependencies": {
     "@ohos/hypium": "1.0.21"

@@ -1,6 +1,6 @@
 <!--
 Copyright (C) 2026 MC4HOS Contributors
-SPDX-License-Identifier: MPL-2.0
+SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
 
 This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,8 +8,12 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -->
 # MC4HOS — Third-Party Notices
 
-MC4HOS is licensed under the **Mozilla Public License 2.0** (see `LICENSE`).
-Every source file carries the Exhibit-A notice, with two documented
+MC4HOS is licensed under the **Mozilla Public License 2.0 with the Exhibit B
+"Incompatible With Secondary Licenses" notice appended** — SPDX expression
+`MPL-2.0-no-copyleft-exception`. In plain terms: Covered Files stay MPL-2.0,
+and downstream Works may NOT combine them with code licensed under the
+Apache License 2.0 or other Secondary Licenses. Every source file carries
+the Exhibit-A notice with the matching SPDX identifier; two documented
 exemptions:
 
 1. **Strict-JSON resource files** (`**/resources/**/*.json`,

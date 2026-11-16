@@ -3,7 +3,7 @@
 # on string names; enable with care and keep the exported names below.
 #
 # Copyright (C) 2026 MC4HOS Contributors
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
 
 -keep-property-name
 startGame

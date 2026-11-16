@@ -1,0 +1,61 @@
+# Copyright (C) 2026 MC4HOS Contributors
+# SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+name: Bug report
+description: Something broke while building or running MC4HOS
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please include the **exact** hvigor/hilog
+        output — nearly every issue so far has been a configuration or
+        schema mismatch, and the exact error text pinpoints it immediately.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sync / configuration (hvigor, build-profile, oh-package)
+        - Native build (CMake/Ninja, jni_compat)
+        - ArkTS compilation
+        - Runtime crash (JVM / game)
+        - Auth / downloads
+        - Controls / UI
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: deveco
+    attributes:
+      label: DevEco Studio version
+      placeholder: "6.1.1.000"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device / emulator and ABI
+      placeholder: "e.g. emulator, x86_64"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Exact error output
+      description: Paste verbatim — no paraphrasing, no screenshots of text.
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: "`python3 scripts/check_configs.py` passes locally"
+        - label: "`modelVersion` in oh-package.json5 and the hvigor configs matches my DevEco Studio version"
+        - label: "SDK strings in build-profile.json5 use the \"(api)\" suffix form"

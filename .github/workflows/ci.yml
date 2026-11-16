@@ -1,0 +1,120 @@
+# Copyright (C) 2026 MC4HOS Contributors
+# SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast, SDK-less sanity gate: encodes the hvigor rules that broke builds
+  # in practice (see scripts/check_configs.py docstring).
+  verify:
+    name: License & config sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: SPDX headers (MPL-2.0-no-copyleft-exception)
+        run: python3 scripts/check_mpl_headers.py
+      - name: Config rules (strict JSON, modelVersion, SDK strings)
+        run: python3 scripts/check_configs.py
+
+  # Full HAP build with Huawei's official Command Line Tools (Linux x64),
+  # which bundle node, hvigor, ohpm and a HarmonyOS SDK.
+  #
+  # REQUIRES a repository VARIABLE (not secret): HOS_TOOLS_URL — a direct
+  # URL to a commandline-tools Linux zip whose bundled hvigor/SDK match the
+  # project modelVersion 6.1.1 / API 24. See docs/BUILD.md §10 for sources
+  # and version notes.
+  #
+  # The HAP is UNSIGNED (debug signing certificates are account-bound and
+  # cannot be shared). Release signing stays a local, manual step.
+  build:
+    name: Build HAP (unsigned)
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve command line tools URL
+        id: tools
+        run: |
+          URL="${{ vars.HOS_TOOLS_URL }}"
+          if [ -z "$URL" ]; then
+            echo "::error::Repository variable HOS_TOOLS_URL is not set."
+            echo "::error::Set it under Settings → Secrets and variables → Actions → Variables."
+            echo "::error::It must point to a Huawei commandline-tools Linux zip whose bundled hvigor/SDK match modelVersion 6.1.1 / API 24. See docs/BUILD.md §10."
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Cache command line tools
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/commandline-tools.zip
+          key: hos-tools-${{ steps.tools.outputs.url }}
+
+      - name: Download command line tools
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fL --retry 3 --retry-delay 5 \
+            -o ~/commandline-tools.zip "${{ steps.tools.outputs.url }}"
+
+      - name: Unpack and wire up toolchain
+        run: |
+          mkdir -p ~/hos-tools
+          unzip -q ~/commandline-tools.zip -d ~/hos-tools
+          TOOLS_HOME=$(find ~/hos-tools -maxdepth 2 -type d -name "commandline-tools" | head -1)
+          if [ -z "$TOOLS_HOME" ]; then
+            echo "::error::commandline-tools directory not found in the zip"
+            exit 1
+          fi
+          echo "TOOLS_HOME=$TOOLS_HOME" >> "$GITHUB_ENV"
+          echo "$TOOLS_HOME/bin" >> "$GITHUB_PATH"
+          echo "DEVECO_SDK_HOME=$TOOLS_HOME/sdk" >> "$GITHUB_ENV"
+          echo "OHPM_HOME=$TOOLS_HOME/tools/ohpm" >> "$GITHUB_ENV"
+
+      - name: Install oh_modules
+        run: ohpm install --all
+
+      - name: Build HAP (debug, unsigned)
+        run: hvigorw --mode module -p product=default -p buildMode=debug assembleHap
+
+      - name: Collect HAPs
+        run: |
+          mkdir -p out
+          find entry/build -name "*.hap" -exec cp {} out/ \;
+          ls -la out
+
+      - name: Upload HAP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mc4hos-hap
+          path: out/*.hap
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload hvigor logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hvigor-logs
+          path: |
+            .hvigor/outputs/logs/**
+            entry/.cxx/**/*.log
+          if-no-files-found: ignore

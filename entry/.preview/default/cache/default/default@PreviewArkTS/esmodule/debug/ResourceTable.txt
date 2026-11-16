@@ -1,0 +1,9 @@
+string EntryAbility_desc 0x01000003
+string EntryAbility_label 0x01000004
+string app_name 0x01000001
+string module_desc 0x01000005
+string perm_internet_reason 0x01000006
+string perm_network_info_reason 0x01000007
+color start_window_background 0x01000008
+media app_icon 0x01000000
+profile main_pages 0x01000002

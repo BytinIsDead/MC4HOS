@@ -1,6 +1,6 @@
 <!--
 Copyright (C) 2026 MC4HOS Contributors
-SPDX-License-Identifier: MPL-2.0
+SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
 
 This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -111,10 +111,26 @@ hdc shell aa start -a EntryAbility -b org.mc4hos.launcher
 Full walkthrough incl. self-test mode, account setup, runtime deployment:
 [docs/BUILD.md](docs/BUILD.md).
 
+## Development & CI
+
+- **CI**: `.github/workflows/ci.yml` builds an unsigned HAP on every
+  push/PR. One-time setup: set the repository **variable** `HOS_TOOLS_URL`
+  to a Huawei commandline-tools Linux zip whose bundled hvigor/SDK match
+  `modelVersion` 6.1.1 / API 24 — see docs/BUILD.md §10.
+- **Local sanity checks** (same as the CI `verify` job):
+  ```bash
+  python3 scripts/check_mpl_headers.py   # SPDX coverage
+  python3 scripts/check_configs.py       # strict JSON, modelVersion, SDK strings
+  ```
+- **Contributing**: see CONTRIBUTING.md — includes the file-format rules
+  table that keeps hvigor happy.
+
 ## Legal summary
 
-- **This launcher:** MPL-2.0. Contributions you make to Covered Files are
-  MPL-2.0 too; see Exhibit A of the license.
+- **This launcher:** MPL-2.0 **with Exhibit B appended** — SPDX expression
+  `MPL-2.0-no-copyleft-exception` (Covered Files stay MPL-2.0; downstream
+  Works may not combine them with Secondary-License code). Contributions you
+  make to Covered Files are MPL-2.0 too; see Exhibit A of the license.
 - **You need a Minecraft account** with a purchased license; the launcher
   authenticates against official Microsoft/Mojang endpoints and downloads
   game files from official servers at your direction. Nothing is cracked

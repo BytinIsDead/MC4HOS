@@ -1,4 +1,6 @@
-# MC4HOS build artifacts
+# MC4HOS build artifacts and tool caches
+# NOTE: hvigor model configs (.hvigor/hvigor-config.json5 and
+# hvigor/hvigor-config.json5) are COMMITTED — only caches are ignored.
 /node_modules
 /oh_modules
 /local.properties
@@ -6,10 +8,13 @@
 **/build
 **/oh_modules
 **/.cxx
-**/.hvigor
 *.hap
 *.hsp
 *.app
 .cxx
 hvigor-wrapper.js
 hvigor/hvigor-config.json5.bak
+
+# hvigor daemon state (model configs stay committed)
+/.hvigor/*
+!/.hvigor/hvigor-config.json5

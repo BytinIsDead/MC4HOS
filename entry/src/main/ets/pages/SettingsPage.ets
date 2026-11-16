@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2026 MC4HOS Contributors
- * SPDX-License-Identifier: MPL-2.0
+ * SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -37,13 +37,13 @@ export struct SettingsPage {
   }
 
   private async loadClientId(): Promise<void> {
-    const context = getContext(this) as common.UIAbilityContext;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const prefs = await preferences.getPreferences(context, { name: PREF_NAME });
     this.clientId = await prefs.get(KEY_AZURE_CLIENT_ID, '') as string;
   }
 
   private async saveClientId(): Promise<void> {
-    const context = getContext(this) as common.UIAbilityContext;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const prefs = await preferences.getPreferences(context, { name: PREF_NAME });
     await prefs.put(KEY_AZURE_CLIENT_ID, this.clientId.trim());
     await prefs.flush();

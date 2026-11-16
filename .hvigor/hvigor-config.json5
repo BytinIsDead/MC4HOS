@@ -1,0 +1,22 @@
+// Copyright (C) 2026 MC4HOS Contributors
+// SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+// hvigor build model configuration. Required for project sync.
+// modelVersion must match the paired DevEco Studio version:
+// DevEco Studio 6.1.1 Release (HarmonyOS 6.1.1 / API 24) → "6.1.1".
+// It must be identical to the modelVersion in oh-package.json5, and any
+// custom value must not be lower than "5.0.0". If DevEco Studio suggests a
+// different model version on open, accept its suggestion (it edits both
+// files for you).
+{
+  "modelVersion": "6.1.1",
+  "dependencies": {},
+  "execution": {},
+  "logging": {},
+  "debugging": {},
+  "nodeOptions": {}
+}

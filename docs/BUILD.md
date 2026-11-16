@@ -1,6 +1,6 @@
 <!--
 Copyright (C) 2026 MC4HOS Contributors
-SPDX-License-Identifier: MPL-2.0
+SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
 
 This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -197,3 +197,41 @@ SDK="C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native"
   their NOTICE files alongside (see NOTICE.md).
 - Never bundle game assets; the launcher fetches them from Mojang's
   official servers only, on behalf of an authenticated, licensed user.
+
+## 10. Continuous integration
+
+`.github/workflows/ci.yml` runs two jobs on every push/PR:
+
+1. **verify** — SDK-less sanity gate:
+   `python3 scripts/check_mpl_headers.py` (SPDX coverage) and
+   `python3 scripts/check_configs.py` (strict-JSON resources, no `#` in
+   json5, modelVersion consistency, SDK string format/ordering,
+   buildVersion, PNG icons). These encode the rules from §2.
+2. **build** — full unsigned HAP via Huawei's official **Command Line
+   Tools** (Linux x64; bundles node, hvigor, ohpm and a HarmonyOS SDK).
+
+One-time setup: set the repository **variable** (Settings → Secrets and
+variables → Actions → Variables):
+
+```
+HOS_TOOLS_URL = <direct URL to a commandline-tools Linux zip>
+```
+
+Requirements for the zip:
+
+- Its bundled **hvigor must support the project `modelVersion`** (6.1.1) —
+  use a commandline-tools release from the DevEco Studio 6.1.x era.
+- Its bundled **SDK must include API 24** (`compatibleSdkVersion: "6.1.1(24)"`).
+
+If `HOS_TOOLS_URL` is unset the build job fails fast with instructions.
+The zip is cached via `actions/cache` keyed on the URL. The produced HAP
+is **unsigned** — debug signing certificates are account-bound, so release
+signing stays a local manual step (§2); CI artifacts are for size/type
+verification and archive purposes.
+
+Run the same checks locally at any time — they are plain stdlib Python:
+
+```bash
+python3 scripts/check_mpl_headers.py
+python3 scripts/check_configs.py
+```

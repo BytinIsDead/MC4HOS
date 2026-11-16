@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2026 MC4HOS Contributors
- * SPDX-License-Identifier: MPL-2.0
+ * SPDX-License-Identifier: MPL-2.0-no-copyleft-exception
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -51,7 +51,7 @@ export struct GamePageView {
     const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
     emitter.on(consoleEvent, this.consoleListener);
 
-    window.getLastWindow(getContext(this)).then((w: window.Window) => {
+    window.getLastWindow(this.getUIContext().getHostContext()).then((w: window.Window) => {
       w.setPreferredOrientation(window.Orientation.LANDSCAPE);
       w.setWindowLayoutFullScreen(true);
     });
@@ -63,7 +63,7 @@ export struct GamePageView {
       emitter.off(consoleEvent, this.consoleListener);
       this.consoleListener = null;
     }
-    window.getLastWindow(getContext(this)).then((w: window.Window) => {
+    window.getLastWindow(this.getUIContext().getHostContext()).then((w: window.Window) => {
       w.setPreferredOrientation(window.Orientation.PORTRAIT);
       w.setWindowLayoutFullScreen(false);
     });
