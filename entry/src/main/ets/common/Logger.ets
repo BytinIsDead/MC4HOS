@@ -28,7 +28,7 @@ export interface LogLine {
 }
 
 const LOG_DOMAIN: number = 0x4D43; // 'MC'
-export const CONSOLE_EVENT_ID: number = 0x4D430001;
+export const CONSOLE_EVENT_NAME: string = 'mc4hos-console';
 
 class ConsoleBufferImpl {
   private lines: LogLine[] = [];
@@ -39,10 +39,8 @@ class ConsoleBufferImpl {
     if (this.lines.length > this.capacity) {
       this.lines.splice(0, this.lines.length - this.capacity);
     }
-    emitter.emit({
-      eventId: CONSOLE_EVENT_ID,
-      priority: emitter.EventPriority.IMMEDIATE
-    }, { data: { level: line.level, tag: line.tag, message: line.message } } as emitter.EventData);
+    emitter.emit(CONSOLE_EVENT_NAME,
+      { data: { level: line.level, tag: line.tag, message: line.message } } as emitter.EventData);
   }
 
   public snapshot(): LogLine[] {

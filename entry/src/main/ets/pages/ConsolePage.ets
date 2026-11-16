@@ -8,7 +8,7 @@
  */
 
 import emitter from '@ohos.events.emitter';
-import { ConsoleBuffer, LogLine, LOG_LEVEL_WARN, LOG_LEVEL_ERROR, CONSOLE_EVENT_ID } from '../common/Logger';
+import { ConsoleBuffer, LogLine, LOG_LEVEL_WARN, LOG_LEVEL_ERROR, CONSOLE_EVENT_NAME } from '../common/Logger';
 import { Paths } from '../common/Paths';
 
 /**
@@ -40,14 +40,12 @@ export struct ConsolePage {
       }
     };
     this.listener = listener;
-    const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
-    emitter.on(consoleEvent, listener);
+    emitter.on(CONSOLE_EVENT_NAME, listener);
   }
 
   aboutToDisappear(): void {
     if (this.listener !== null) {
-      const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
-      emitter.off(consoleEvent, this.listener);
+      emitter.off(CONSOLE_EVENT_NAME, this.listener);
       this.listener = null;
     }
   }

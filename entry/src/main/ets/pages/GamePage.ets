@@ -11,7 +11,7 @@ import window from '@ohos.window';
 import { VirtualControls } from '../ui/VirtualControls.ets';
 import { ControlLayoutStore, ControlLayoutSpec } from '../ui/ControlLayout';
 import { GameLauncher, LaunchProgress } from '../launch/GameLauncher';
-import { CONSOLE_EVENT_ID } from '../common/Logger';
+import { CONSOLE_EVENT_NAME } from '../common/Logger';
 import emitter from '@ohos.events.emitter';
 
 /**
@@ -49,8 +49,7 @@ export struct GamePageView {
       this.lastLogLines = this.lastLogLines.concat(message).slice(-4);
     };
     this.consoleListener = listener;
-    const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
-    emitter.on(consoleEvent, listener);
+    emitter.on(CONSOLE_EVENT_NAME, listener);
 
     window.getLastWindow(this.getUIContext().getHostContext()).then((w: window.Window) => {
       w.setPreferredOrientation(window.Orientation.LANDSCAPE);
@@ -60,8 +59,7 @@ export struct GamePageView {
 
   aboutToDisappear(): void {
     if (this.consoleListener !== null) {
-      const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
-      emitter.off(consoleEvent, this.consoleListener);
+      emitter.off(CONSOLE_EVENT_NAME, this.consoleListener);
       this.consoleListener = null;
     }
     window.getLastWindow(this.getUIContext().getHostContext()).then((w: window.Window) => {
