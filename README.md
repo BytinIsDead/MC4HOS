@@ -113,10 +113,15 @@ Full walkthrough incl. self-test mode, account setup, runtime deployment:
 
 ## Development & CI
 
-- **CI**: `.github/workflows/ci.yml` builds an unsigned HAP on every
-  push/PR. One-time setup: set the repository **variable** `HOS_TOOLS_URL`
-  to a Huawei commandline-tools Linux zip whose bundled hvigor/SDK match
-  `modelVersion` 6.1.1 / API 24 — see docs/BUILD.md §10.
+- **CI builds the HAP on GitHub with zero configuration** — no secrets, no
+  repository variables. `.github/workflows/ci.yml` fetches the HarmonyOS
+  toolchain (commandline-tools 6.1.1.280, bundled SDK = API 24) from a
+  public, login-free community mirror pinned to an immutable revision, runs
+  `ohpm install` + `hvigorw assembleHap`, and uploads the unsigned HAP as an
+  artifact. Details: docs/BUILD.md §10.
+- **Local builds** (optional convenience): `scripts\build_hap.bat`
+  (Windows) / `scripts/build_hap.sh` (macOS/Linux) drive the locally
+  installed DevEco Studio the same way.
 - **Local sanity checks** (same as the CI `verify` job):
   ```bash
   python3 scripts/check_mpl_headers.py   # SPDX coverage

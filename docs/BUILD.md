@@ -198,40 +198,36 @@ SDK="C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native"
 - Never bundle game assets; the launcher fetches them from Mojang's
   official servers only, on behalf of an authenticated, licensed user.
 
-## 10. Continuous integration
+## 10. Continuous integration (zero configuration)
 
-`.github/workflows/ci.yml` runs two jobs on every push/PR:
+`.github/workflows/ci.yml` runs two jobs on every push/PR — with **no
+secrets and no repository variables required**:
 
 1. **verify** — SDK-less sanity gate:
    `python3 scripts/check_mpl_headers.py` (SPDX coverage) and
    `python3 scripts/check_configs.py` (strict-JSON resources, no `#` in
    json5, modelVersion consistency, SDK string format/ordering,
-   buildVersion, PNG icons). These encode the rules from §2.
-2. **build** — full unsigned HAP via Huawei's official **Command Line
-   Tools** (Linux x64; bundles node, hvigor, ohpm and a HarmonyOS SDK).
+   buildVersion, PNG icons).
+2. **build** — full unsigned HAP on GitHub-hosted runners. The HarmonyOS
+   toolchain (commandline-tools 6.1.1.280, bundled SDK = API 24, matching
+   `modelVersion` 6.1.1) is fetched from **public, login-free sources** —
+   Huawei's own download page is login-gated, so the workflow uses a public
+   community mirror, pinned to an immutable Hugging Face revision
+   (verified downloadable, ~2.1 GB):
 
-One-time setup: set the repository **variable** (Settings → Secrets and
-variables → Actions → Variables):
+   ```
+   https://huggingface.co/csukuangfj/harmonyos-commandline-tools/resolve/7ff999061d57e9a542fe7e02fc920961e67a163b/commandline-tools-linux-x64-6.1.1.280.zip
+   ```
 
-```
-HOS_TOOLS_URL = <direct URL to a commandline-tools Linux zip>
-```
+   The zip is cached via `actions/cache`, so mirror changes don't break
+   the pipeline after the first run. An optional repository VARIABLE
+   `HOS_TOOLS_URL` can pin a different toolchain (tried first) — never a
+   secret.
 
-Requirements for the zip:
+The produced HAP is **unsigned** (debug signing certificates are
+account-bound); signing stays a local manual step (§2). For local builds
+without GitHub, `scripts/build_hap.bat` / `scripts/build_hap.sh` drive the
+locally installed DevEco Studio the same way.
 
-- Its bundled **hvigor must support the project `modelVersion`** (6.1.1) —
-  use a commandline-tools release from the DevEco Studio 6.1.x era.
-- Its bundled **SDK must include API 24** (`compatibleSdkVersion: "6.1.1(24)"`).
-
-If `HOS_TOOLS_URL` is unset the build job fails fast with instructions.
-The zip is cached via `actions/cache` keyed on the URL. The produced HAP
-is **unsigned** — debug signing certificates are account-bound, so release
-signing stays a local manual step (§2); CI artifacts are for size/type
-verification and archive purposes.
-
-Run the same checks locally at any time — they are plain stdlib Python:
-
-```bash
-python3 scripts/check_mpl_headers.py
-python3 scripts/check_configs.py
-```
+When a newer commandline-tools release lands on the mirror, bump the two
+URLs in `ci.yml` (one-line change) and the cache key.

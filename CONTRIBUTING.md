@@ -51,8 +51,10 @@ python3 scripts/check_mpl_headers.py   # SPDX coverage
 python3 scripts/check_configs.py       # config rules above
 ```
 
-Both run in CI (`.github/workflows/ci.yml`); the `verify` job must pass
-before the HAP build job runs.
+Both run in the CI `verify` job (`.github/workflows/ci.yml`). The CI
+`build` job compiles an unsigned HAP on GitHub using a public, pinned
+commandline-tools mirror — no secrets or repository variables needed. For
+local builds use `scripts/build_hap.bat` / `scripts/build_hap.sh`.
 
 ## Native code
 

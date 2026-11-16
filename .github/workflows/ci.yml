@@ -4,6 +4,25 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# CI builds an unsigned HAP on GitHub-hosted runners with ZERO repository
+# configuration — no secrets, no variables. The HarmonyOS toolchain comes
+# from public, login-free download sources (verified 2026-11-16):
+#
+#   Primary:  Hugging Face mirror, revision-pinned zip
+#             commandline-tools-linux-x64-6.1.1.280.zip (~2.1 GB, bundled
+#             SDK matches modelVersion 6.1.1 / API 24)
+#   Fallback: same file on the mirror's main branch (appears there after
+#             mirror updates)
+#
+# Huawei's own download page is login-gated (403 for direct CDN probes),
+# which is why a public mirror is used. The revision pin is immutable, so
+# the URL is stable; after the first successful run the zip is cached by
+# actions/cache and survives mirror changes anyway.
+#
+# Optional: set repository VARIABLE HOS_TOOLS_URL to pin a different
+# toolchain zip (tried first). Release signing stays a local, manual step —
+# CI artifacts are unsigned.
 
 name: CI
 
@@ -17,9 +36,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  HOS_TOOLS_PRIMARY: https://huggingface.co/csukuangfj/harmonyos-commandline-tools/resolve/7ff999061d57e9a542fe7e02fc920961e67a163b/commandline-tools-linux-x64-6.1.1.280.zip
+  HOS_TOOLS_FALLBACK: https://huggingface.co/csukuangfj/harmonyos-commandline-tools/resolve/main/commandline-tools-linux-x64-6.1.1.280.zip
+
 jobs:
-  # Fast, SDK-less sanity gate: encodes the hvigor rules that broke builds
-  # in practice (see scripts/check_configs.py docstring).
   verify:
     name: License & config sanity
     runs-on: ubuntu-latest
@@ -33,16 +54,6 @@ jobs:
       - name: Config rules (strict JSON, modelVersion, SDK strings)
         run: python3 scripts/check_configs.py
 
-  # Full HAP build with Huawei's official Command Line Tools (Linux x64),
-  # which bundle node, hvigor, ohpm and a HarmonyOS SDK.
-  #
-  # REQUIRES a repository VARIABLE (not secret): HOS_TOOLS_URL — a direct
-  # URL to a commandline-tools Linux zip whose bundled hvigor/SDK match the
-  # project modelVersion 6.1.1 / API 24. See docs/BUILD.md §10 for sources
-  # and version notes.
-  #
-  # The HAP is UNSIGNED (debug signing certificates are account-bound and
-  # cannot be shared). Release signing stays a local, manual step.
   build:
     name: Build HAP (unsigned)
     runs-on: ubuntu-latest
@@ -50,38 +61,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve command line tools URL
-        id: tools
-        run: |
-          URL="${{ vars.HOS_TOOLS_URL }}"
-          if [ -z "$URL" ]; then
-            echo "::error::Repository variable HOS_TOOLS_URL is not set."
-            echo "::error::Set it under Settings → Secrets and variables → Actions → Variables."
-            echo "::error::It must point to a Huawei commandline-tools Linux zip whose bundled hvigor/SDK match modelVersion 6.1.1 / API 24. See docs/BUILD.md §10."
-            exit 1
-          fi
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-
-      - name: Cache command line tools
+      - name: Cache toolchain zip
         id: cache
         uses: actions/cache@v4
         with:
           path: ~/commandline-tools.zip
-          key: hos-tools-${{ steps.tools.outputs.url }}
+          key: hos-tools-6.1.1.280-v1
 
-      - name: Download command line tools
+      - name: Download HarmonyOS command line tools (public, no auth)
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          curl -fL --retry 3 --retry-delay 5 \
-            -o ~/commandline-tools.zip "${{ steps.tools.outputs.url }}"
+          CANDIDATES=(
+            "${{ vars.HOS_TOOLS_URL }}"
+            "$HOS_TOOLS_PRIMARY"
+            "$HOS_TOOLS_FALLBACK"
+          )
+          for url in "${CANDIDATES[@]}"; do
+            [ -n "$url" ] || continue
+            echo "Trying: $url"
+            if curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 \
+                 -o ~/commandline-tools.zip "$url"; then
+              echo "Downloaded from: $url"
+              exit 0
+            fi
+            echo "Candidate failed, trying next…"
+          done
+          echo "::error::All commandline-tools sources failed."
+          exit 1
 
       - name: Unpack and wire up toolchain
         run: |
           mkdir -p ~/hos-tools
           unzip -q ~/commandline-tools.zip -d ~/hos-tools
           TOOLS_HOME=$(find ~/hos-tools -maxdepth 2 -type d -name "commandline-tools" | head -1)
-          if [ -z "$TOOLS_HOME" ]; then
-            echo "::error::commandline-tools directory not found in the zip"
+          if [ -z "$TOOLS_HOME" ] || [ ! -f "$TOOLS_HOME/tools/hvigor/bin/hvigorw.js" ]; then
+            echo "::error::commandline-tools layout not recognised in the zip"
+            exit 1
+          fi
+          if [ ! -d "$TOOLS_HOME/sdk" ]; then
+            echo "::error::zip does not contain a bundled SDK (tools require one)"
             exit 1
           fi
           echo "TOOLS_HOME=$TOOLS_HOME" >> "$GITHUB_ENV"
@@ -89,11 +107,15 @@ jobs:
           echo "DEVECO_SDK_HOME=$TOOLS_HOME/sdk" >> "$GITHUB_ENV"
           echo "OHPM_HOME=$TOOLS_HOME/tools/ohpm" >> "$GITHUB_ENV"
 
+      - name: Toolchain versions
+        run: |
+          "$TOOLS_HOME/tools/node/bin/node" "$TOOLS_HOME/tools/hvigor/bin/hvigorw.js" --version || true
+
       - name: Install oh_modules
-        run: ohpm install --all
+        run: ohpm install
 
       - name: Build HAP (debug, unsigned)
-        run: hvigorw --mode module -p product=default -p buildMode=debug assembleHap
+        run: hvigorw --mode module -p module=entry@default -p product=default assembleHap
 
       - name: Collect HAPs
         run: |
