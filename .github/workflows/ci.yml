@@ -11,14 +11,15 @@
 #
 #   Primary:  Hugging Face mirror, revision-pinned zip
 #             commandline-tools-linux-x64-6.1.1.280.zip (~2.1 GB, bundled
-#             SDK matches modelVersion 6.1.1 / API 24)
-#   Fallback: same file on the mirror's main branch (appears there after
-#             mirror updates)
+#             SDK matches modelVersion 6.1.1 / API 24; contents verified:
+#             bin/hvigorw, hvigor/bin/hvigorw.js, tool/node, ohpm/,
+#             sdk/default/{openharmony,hms} incl. hmos.toolchain.cmake)
 #
-# Huawei's own download page is login-gated (403 for direct CDN probes),
-# which is why a public mirror is used. The revision pin is immutable, so
-# the URL is stable; after the first successful run the zip is cached by
-# actions/cache and survives mirror changes anyway.
+# NOTE the zip's internal layout differs from DevEco Studio installs:
+#   - root dir is HYPHENATED: command-line-tools/
+#   - hvigor lives at <root>/hvigor/bin/hvigorw.js (no tools/ level)
+#   - node at <root>/tool/node (singular)
+#   - user-facing launchers at <root>/bin/{hvigorw,ohpm}
 #
 # Optional: set repository VARIABLE HOS_TOOLS_URL to pin a different
 # toolchain zip (tried first). Release signing stays a local, manual step —
@@ -93,23 +94,35 @@ jobs:
         run: |
           mkdir -p ~/hos-tools
           unzip -q ~/commandline-tools.zip -d ~/hos-tools
-          TOOLS_HOME=$(find ~/hos-tools -maxdepth 2 -type d -name "commandline-tools" | head -1)
-          if [ -z "$TOOLS_HOME" ] || [ ! -f "$TOOLS_HOME/tools/hvigor/bin/hvigorw.js" ]; then
-            echo "::error::commandline-tools layout not recognised in the zip"
+          # Layout-agnostic detection (zip root is command-line-tools/, but
+          # do not depend on the name): find the hvigor engine and derive
+          # the toolchain root from it.
+          HVIGORW_JS=$(find ~/hos-tools -type f -name "hvigorw.js" | head -1)
+          if [ -z "$HVIGORW_JS" ]; then
+            echo "::error::hvigorw.js not found anywhere in the zip"
             exit 1
           fi
-          if [ ! -d "$TOOLS_HOME/sdk" ]; then
-            echo "::error::zip does not contain a bundled SDK (tools require one)"
-            exit 1
-          fi
+          TOOLS_HOME=$(cd "$(dirname "$HVIGORW_JS")/../.." && pwd)
+          for required in "$TOOLS_HOME/sdk" "$TOOLS_HOME/bin/hvigorw" \
+                          "$TOOLS_HOME/tool/node/bin/node"; do
+            if [ ! -e "$required" ]; then
+              echo "::error::unexpected toolchain layout: missing $required"
+              exit 1
+            fi
+          done
+          # Restore execute bits in case zip metadata did not carry them.
+          chmod +x "$TOOLS_HOME/bin/"* \
+                   "$TOOLS_HOME/hvigor/bin/hvigorw" \
+                   "$TOOLS_HOME/tool/node/bin/node" 2>/dev/null || true
+          echo "Tools root: $TOOLS_HOME"
           echo "TOOLS_HOME=$TOOLS_HOME" >> "$GITHUB_ENV"
           echo "$TOOLS_HOME/bin" >> "$GITHUB_PATH"
           echo "DEVECO_SDK_HOME=$TOOLS_HOME/sdk" >> "$GITHUB_ENV"
-          echo "OHPM_HOME=$TOOLS_HOME/tools/ohpm" >> "$GITHUB_ENV"
 
       - name: Toolchain versions
         run: |
-          "$TOOLS_HOME/tools/node/bin/node" "$TOOLS_HOME/tools/hvigor/bin/hvigorw.js" --version || true
+          hvigorw --version || true
+          node --version || true
 
       - name: Install oh_modules
         run: ohpm install

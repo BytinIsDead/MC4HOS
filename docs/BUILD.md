@@ -220,7 +220,24 @@ secrets and no repository variables required**:
    ```
 
    The zip is cached via `actions/cache`, so mirror changes don't break
-   the pipeline after the first run. An optional repository VARIABLE
+   the pipeline after the first run.
+
+   The zip's internal layout (verified by reading its central directory —
+   it differs from DevEco Studio installs, which is why naive detection
+   fails):
+
+   ```
+   command-line-tools/              <- zip root is HYPHENATED
+   ├── bin/hvigorw, bin/ohpm        <- user-facing launchers (added to PATH)
+   ├── hvigor/bin/hvigorw.js        <- hvigor engine (no tools/ level)
+   ├── tool/node/bin/node           <- bundled node (singular "tool/")
+   ├── ohpm/bin/ohpm
+   └── sdk/default/{openharmony,hms}
+                                    <- incl. hmos.toolchain.cmake + llvm
+   ```
+
+   The workflow detects `hvigorw.js` by name anywhere in the extracted
+   tree and derives the root from it, so it survives root-name changes. An optional repository VARIABLE
    `HOS_TOOLS_URL` can pin a different toolchain (tried first) — never a
    secret.
 
