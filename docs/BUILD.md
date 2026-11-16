@@ -168,7 +168,7 @@ The requested scope is fixed to `XboxLive.signin offline_access` in
 | CMake error "variable ... set to NOTFOUND" | HMOS sysroot may lack a probed lib — probe `NAMES <name> <name>.z` and link conditionally (see CMakeLists nativewindow handling) |
 | `fatal error: 'jni.h' file not found` at BuildNativeWithNinja | the OHOS NDK ships no `jni.h` — `cpp/include/jni_compat.h` provides the clean-room ABI subset; do not include `<jni.h>` anywhere |
 | `dlopen(libjvm) failed` in console | JRE pack not installed under `jvm/<name>/lib/server/libjvm.so` |
-| `Failed to get a resolved OhmUrl for "...index.d.ts"` at CompileArkTS | CLI builds must run `ohpm install` **inside `entry/`** (root-level install does not create the module's oh_modules link for `.so` type packages) |
+| `Failed to get a resolved OhmUrl for "...index.d.ts"` at CompileArkTS | two known causes: (1) CLI builds must run `ohpm install` **inside `entry/`** — a root-level install does not create the module's oh_modules link for `.so` type packages; (2) `useNormalizedOHMUrl: true` breaks `.so` type-package resolution (Huawei FAQ faqs-compiling-and-building-225) — keep it `false` |
 | `Concurrent function should only use import variable or local variable` | taskpool `@Concurrent` functions may only reference imports/locals — shared helpers must live in an imported module (`DownloadShared.ets`) |
 
 ### Local native verification (no device needed)

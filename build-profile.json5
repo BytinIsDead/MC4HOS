@@ -37,7 +37,14 @@
         "buildOption": {
           "strictMode": {
             "caseSensitiveCheck": true,
-            "useNormalizedOHMUrl": true
+            // useNormalizedOHMUrl: true is a build-performance optimization
+            // with a known failure mode (see Huawei FAQ
+            // faqs-compiling-and-building-225): native .so imports resolve
+            // via index.d.ts type packages fail OhmUrl resolution
+            // ("hvigor_ignore__...index.d.ts"). Disabled — the classic OHM
+            // URL scheme resolves them correctly. Re-enable only if a later
+            // toolchain fixes so-type resolution under normalized mode.
+            "useNormalizedOHMUrl": false
           }
           // Note: externalNativeOptions intentionally lives ONLY in
           // entry/build-profile.json5 (module level) — declaring it here
