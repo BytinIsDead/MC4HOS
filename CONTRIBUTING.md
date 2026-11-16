@@ -39,6 +39,9 @@ because each one broke a real build.
 | `AppScope/app.json5` | must declare `buildVersion` (6.x schema) |
 | app icons | PNG only (SVG rejected) |
 | `AppScope`+`entry` media | app_icon.png committed; SVG not allowed for icons |
+| ArkTS `Record<string, Object>` literals | values must be object **references** — primitives/arrays are rejected as "untyped"; use a declared interface or bracket assignment (`payload['key'] = v`) |
+| `XComponent({...})` on API 24 | classic overload field is **`libraryname`** (not `library`); `XComponentOptions` takes `type` + required `controller` |
+| `emitter.on(event, cb)` | `cb` must be a **non-null** local — nullable `\| null` fields fail every overload |
 
 DevEco Studio may rewrite these configs during sync (it can drop an explicit
 `compileSdkVersion` or strip license headers) — re-add headers if the IDE

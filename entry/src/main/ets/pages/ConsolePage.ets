@@ -25,7 +25,7 @@ export struct ConsolePage {
 
   aboutToAppear(): void {
     this.lines = ConsoleBuffer.snapshot();
-    this.listener = (event: emitter.EventData) => {
+    const listener: (event: emitter.EventData) => void = (event: emitter.EventData) => {
       const data: Record<string, Object> | undefined = event.data;
       if (data === undefined) {
         return;
@@ -39,8 +39,9 @@ export struct ConsolePage {
         this.scroller.scrollEdge(Edge.Bottom);
       }
     };
+    this.listener = listener;
     const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
-    emitter.on(consoleEvent, this.listener);
+    emitter.on(consoleEvent, listener);
   }
 
   aboutToDisappear(): void {

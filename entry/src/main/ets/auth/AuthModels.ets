@@ -38,6 +38,19 @@ export interface AuthResult {
   secrets: AuthSecrets;
 }
 
+/**
+ * Property map for the XBL/XSTS ticket exchanges. Declared as an interface
+ * because ArkTS rejects Record<string, Object> literals whose values are
+ * primitives/arrays (Object only accepts references).
+ */
+export interface TicketProperties {
+  AuthMethod?: string;
+  SiteName?: string;
+  RpsTicket?: string;
+  SandboxId?: string;
+  UserTokens?: Array<string>;
+}
+
 /** Device-code flow initiation response (RFC 8628 §3.2). */
 export interface DeviceCodeResponse {
   deviceCode: string;

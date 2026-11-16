@@ -37,7 +37,7 @@ export struct GamePageView {
     GameLauncher.onProgress((p: LaunchProgress) => {
       this.progress = p;
     });
-    this.consoleListener = (event: emitter.EventData) => {
+    const listener: (event: emitter.EventData) => void = (event: emitter.EventData) => {
       const data: Record<string, Object> | undefined = event.data;
       if (data === undefined) {
         return;
@@ -48,8 +48,9 @@ export struct GamePageView {
       }
       this.lastLogLines = this.lastLogLines.concat(message).slice(-4);
     };
+    this.consoleListener = listener;
     const consoleEvent: emitter.InnerEvent = { eventId: CONSOLE_EVENT_ID };
-    emitter.on(consoleEvent, this.consoleListener);
+    emitter.on(consoleEvent, listener);
 
     window.getLastWindow(this.getUIContext().getHostContext()).then((w: window.Window) => {
       w.setPreferredOrientation(window.Orientation.LANDSCAPE);
@@ -94,7 +95,7 @@ export struct GamePageView {
     Stack() {
       // Native surface: 'library' names the NAPI module that receives the
       // OH_NativeXComponent pointer and EGL window on creation.
-      XComponent({ id: 'game_surface', type: XComponentType.SURFACE, library: 'mc4hos_core' })
+      XComponent({ id: 'game_surface', type: XComponentType.SURFACE, libraryname: 'mc4hos_core' })
         .width('100%')
         .height('100%')
         .onLoad(() => {

@@ -10,7 +10,7 @@
 import { getJson, postJson, postForm } from '../common/Http';
 import { JsonObj, parseJson, getStr, getNum, getArr, getObj } from '../common/JsonReader';
 import { Logger } from '../common/Logger';
-import { AccountProfile, AuthSecrets, DeviceCodeResponse, AuthStateUpdate, AuthResult, AuthPhase } from './AuthModels';
+import { AccountProfile, AuthSecrets, DeviceCodeResponse, AuthStateUpdate, AuthResult, AuthPhase, TicketProperties } from './AuthModels';
 
 /**
  * Microsoft account sign-in via the OAuth 2.0 Device Authorization Grant
@@ -135,7 +135,7 @@ export class MicrosoftAuth {
 
     // --- XBL user token ---
     report('exchanging_xbl', 'Requesting Xbox Live token…');
-    const xblProps: Record<string, Object> = {
+    const xblProps: TicketProperties = {
       AuthMethod: 'RPS',
       SiteName: 'user.auth.xboxlive.com',
       RpsTicket: `d=${msAccessToken}`
@@ -151,7 +151,7 @@ export class MicrosoftAuth {
 
     // --- XSTS token (Minecraft relying party) ---
     report('exchanging_xbl', 'Requesting XSTS ticket…');
-    const xstsProps: Record<string, Object> = {
+    const xstsProps: TicketProperties = {
       SandboxId: 'RETAIL',
       UserTokens: [xblToken]
     };
@@ -167,9 +167,10 @@ export class MicrosoftAuth {
 
     // --- Minecraft services access token ---
     report('exchanging_xbl', 'Signing in to Minecraft services…');
-    const loginPayload: Record<string, string> =
-      { identityToken: `XBL3.0 x=${uhs};${xstsToken}` };
-    const acceptHeaders: Record<string, string> = { 'Accept': 'application/json' };
+    const loginPayload: Record<string, string> = {};
+    loginPayload['identityToken'] = `XBL3.0 x=${uhs};${xstsToken}`;
+    const acceptHeaders: Record<string, string> = {};
+    acceptHeaders['Accept'] = 'application/json';
     const mcResp = await postJson(MC_LOGIN_URL,
       JSON.stringify(loginPayload), acceptHeaders);
     if (!mcResp.ok) {
@@ -231,7 +232,7 @@ export class MicrosoftAuth {
       return null;
     }
     // Refresh the Minecraft services token as well.
-    const xblProps: Record<string, Object> = {
+    const xblProps: TicketProperties = {
       AuthMethod: 'RPS',
       SiteName: 'user.auth.xboxlive.com',
       RpsTicket: `d=${newAccess}`
@@ -241,7 +242,7 @@ export class MicrosoftAuth {
     if (xblJson === null) {
       return null;
     }
-    const xstsProps: Record<string, Object> = {
+    const xstsProps: TicketProperties = {
       SandboxId: 'RETAIL',
       UserTokens: [getStr(xblJson, 'Token')]
     };
@@ -251,9 +252,10 @@ export class MicrosoftAuth {
       return null;
     }
     const uhs: string = MicrosoftAuth.firstUserHash(xstsJson);
-    const loginPayload: Record<string, string> =
-      { identityToken: `XBL3.0 x=${uhs};${getStr(xstsJson, 'Token')}` };
-    const acceptHeaders: Record<string, string> = { 'Accept': 'application/json' };
+    const loginPayload: Record<string, string> = {};
+    loginPayload['identityToken'] = `XBL3.0 x=${uhs};${getStr(xstsJson, 'Token')}`;
+    const acceptHeaders: Record<string, string> = {};
+    acceptHeaders['Accept'] = 'application/json';
     const mcResp = await postJson(MC_LOGIN_URL,
       JSON.stringify(loginPayload), acceptHeaders);
     if (!mcResp.ok) {
@@ -273,11 +275,12 @@ export class MicrosoftAuth {
   /** Standard XBL/XSTS POST envelope shared by both ticket endpoints. */
   private static async xblRequest(
     url: string,
-    properties: Record<string, Object>,
+    properties: TicketProperties,
     rpsTicket: string | undefined,
     relyingParty?: string
   ): Promise<JsonObj | null> {
-    const payload: Record<string, Object> = { Properties: properties };
+    const payload: Record<string, Object> = {};
+    payload['Properties'] = properties;
     if (rpsTicket !== undefined) {
       payload['RpsTicket'] = rpsTicket;
     }
