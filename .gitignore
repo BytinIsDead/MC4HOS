@@ -21,3 +21,7 @@ hvigor/hvigor-config.json5.bak
 
 # local build output
 /out
+
+# ohpm lock files regenerate per-platform; commit none
+oh-package-lock.json5
+entry/oh-package-lock.json5

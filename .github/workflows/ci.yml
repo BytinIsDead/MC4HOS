@@ -128,6 +128,16 @@ jobs:
         run: |
           ohpm install
           cd entry && ohpm install
+          cd ..
+          echo "=== ohpm / oh_modules diagnostics ==="
+          ohpm -v || true
+          ls -la entry/oh_modules/ || true
+          if [ -e entry/oh_modules/mc4hos_core.so ]; then
+            echo "SO-TYPES LINK: OK"
+            readlink -f entry/oh_modules/mc4hos_core.so || true
+          else
+            echo "SO-TYPES LINK: MISSING"
+          fi
 
       - name: Build HAP (debug, unsigned)
         run: hvigorw --mode module -p module=entry@default -p product=default assembleHap

@@ -5,14 +5,15 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * Matches the DevEco native template shape exactly (name/types/version/
+ * description only). Extra fields (main, license, dependencies) were
+ * tested and do not participate in so-import OhmUrl resolution.
  */
 
 {
   "name": "mc4hos_core.so",
   "types": "./index.d.ts",
-  "main": "./index.d.ts",
-  "version": "1.0.0",
-  "description": "MC4HOS native core (NAPI/JVM bridge)",
-  "license": "MPL-2.0-no-copyleft-exception",
-  "dependencies": {}
+  "version": "",
+  "description": "MC4HOS native core (NAPI/JVM bridge)"
 }
