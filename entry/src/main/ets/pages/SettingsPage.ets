@@ -12,8 +12,10 @@ import common from '@ohos.app.ability.common';
 import { MicrosoftAuth } from '../auth/MicrosoftAuth';
 import { GameLauncherPushBridge } from './HomeTab.ets';
 import {
-  KEY_RAM_MB, KEY_RESOLUTION_SCALE, KEY_DEMO_MODE, clampRam, maxDeviceRamMb
+  KEY_RAM_MB, KEY_RESOLUTION_SCALE, KEY_DEMO_MODE, DEFAULT_AZURE_CLIENT_ID,
+  clampRam, maxDeviceRamMb
 } from '../common/AppState';
+import { DeployImport } from '../common/DeployImport';
 
 /**
  * Settings: memory, internal render resolution scale, self-test mode,
@@ -31,6 +33,18 @@ export struct SettingsPage {
   @StorageLink(KEY_DEMO_MODE) selfTestMode: boolean = false;
   @State clientId: string = '';
   @State savedHint: string = '';
+  @State packZipName: string = '';
+  @State nativesMcVersion: string = '';
+  @State deployStatus: string = '';
+
+  private runImport(promise: Promise<string>): void {
+    this.deployStatus = 'Working…';
+    promise.then((msg: string) => {
+      this.deployStatus = msg;
+    }).catch((err: Error) => {
+      this.deployStatus = `Import error: ${err.message}`;
+    });
+  }
 
   aboutToAppear(): void {
     this.loadClientId();
@@ -39,7 +53,7 @@ export struct SettingsPage {
   private async loadClientId(): Promise<void> {
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const prefs = await preferences.getPreferences(context, { name: PREF_NAME });
-    this.clientId = await prefs.get(KEY_AZURE_CLIENT_ID, '') as string;
+    this.clientId = await prefs.get(KEY_AZURE_CLIENT_ID, DEFAULT_AZURE_CLIENT_ID) as string;
   }
 
   private async saveClientId(): Promise<void> {
@@ -162,6 +176,81 @@ export struct SettingsPage {
               .fontSize(11)
               .fontColor('#63C36A')
               .margin({ top: 4 })
+          }
+
+          // Deployment (device testing without a PC file browser)
+          Text('Deployment')
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+            .width('100%')
+            .margin({ top: 16 })
+          Text('Push files with `hdc file send <file> /data/local/tmp/` on your PC, then import here:')
+            .fontSize(11)
+            .fontColor('#8FA0B3')
+            .width('100%')
+            .margin({ top: 2 })
+          TextInput({ text: this.packZipName, placeholder: 'jre17-ohos-x86_64.zip' })
+            .width('100%')
+            .height(40)
+            .fontSize(13)
+            .backgroundColor('#1F2430')
+            .fontColor('#FFFFFF')
+            .margin({ top: 6 })
+            .onChange((value: string) => {
+              this.packZipName = value;
+            })
+          Button('Import runtime pack')
+            .width('100%')
+            .height(40)
+            .fontSize(13)
+            .backgroundColor('#2A3340')
+            .margin({ top: 6 })
+            .onClick(() => {
+              this.runImport(DeployImport.importRuntimePack(this.packZipName.trim()));
+            })
+          Button('Import bridge jar (mc4hos-bridge.jar)')
+            .width('100%')
+            .height(40)
+            .fontSize(13)
+            .backgroundColor('#2A3340')
+            .margin({ top: 6 })
+            .onClick(() => {
+              this.runImport(DeployImport.importBridgeJar());
+            })
+          TextInput({ text: this.nativesMcVersion, placeholder: 'MC version for natives, e.g. 1.21.4' })
+            .width('100%')
+            .height(40)
+            .fontSize(13)
+            .backgroundColor('#1F2430')
+            .fontColor('#FFFFFF')
+            .margin({ top: 6 })
+            .onChange((value: string) => {
+              this.nativesMcVersion = value;
+            })
+          Button('Import natives zip (natives-<version>.zip, .so files at zip root)')
+            .width('100%')
+            .height(40)
+            .fontSize(13)
+            .backgroundColor('#2A3340')
+            .margin({ top: 6 })
+            .onClick(() => {
+              this.runImport(DeployImport.importNativesZip(this.nativesMcVersion.trim()));
+            })
+          Button('List /data/local/tmp')
+            .width('100%')
+            .height(36)
+            .fontSize(12)
+            .backgroundColor('#20262F')
+            .margin({ top: 6 })
+            .onClick(() => {
+              this.runImport(DeployImport.listTmp());
+            })
+          if (this.deployStatus.length > 0) {
+            Text(this.deployStatus)
+              .fontSize(12)
+              .fontColor('#63C36A')
+              .width('100%')
+              .margin({ top: 6 })
           }
 
           // Controls editor

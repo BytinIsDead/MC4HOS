@@ -115,9 +115,24 @@ hdc hilog | grep -E "MC4HOS|Game"
 
 ## 6. Deploying runtimes and natives onto the device
 
+**Recommended (works on every device): the in-app importer.**
+`hdc file send` into app sandboxes often fails with "No such file or
+directory" / permission errors — but `/data/local/tmp` is world-writable:
+
+```bash
+hdc file send jre17-ohos-x86_64.zip  /data/local/tmp/
+hdc file send mc4hos-bridge.jar      /data/local/tmp/
+hdc file send natives-1.21.4.zip     /data/local/tmp/
+```
+
+Then in the app: Settings → **Deployment** → import each file (the app
+copies them into its own sandbox, extracts runtime packs and natives, and
+writes the runtime.json markers automatically).
+
 The app sandbox directory is
-`/data/app/el2/100/base/org.mc4hos.launcher/haps/entry/files/mc4hos/`.
-Replace `<abi>` with the device architecture (`arm64-v8a` on phones/tablets,
+`/data/app/el2/100/base/org.mc4hos.launcher/haps/entry/files/mc4hos/`
+(emulator/rooted devices and DevEco's Device File Browser can write there
+directly; on stock devices use the importer above). Replace `<abi>` with the device architecture (`arm64-v8a` on phones/tablets,
 `x86_64` on Intel 2-in-1s and the emulator — `hdc shell "param get
 const.product.cpu.abilist"` prints it). With the app **not running**:
 

@@ -19,7 +19,7 @@ import { AccountStore } from '../auth/AccountStore';
 import { MicrosoftAuth } from '../auth/MicrosoftAuth';
 import { ControlLayoutStore } from '../ui/ControlLayout';
 import { GameLauncher } from '../launch/GameLauncher';
-import { KEY_ACCOUNT_NAME, KEY_ACCOUNT_UUID, KEY_ACCOUNT_XUID, KEY_ACCOUNT_READY } from '../common/AppState';
+import { KEY_ACCOUNT_NAME, KEY_ACCOUNT_UUID, KEY_ACCOUNT_XUID, KEY_ACCOUNT_READY, DEFAULT_AZURE_CLIENT_ID } from '../common/AppState';
 
 /**
  * Entry ability: wires up the sandbox layout, secure stores, the native log
@@ -51,7 +51,7 @@ export default class EntryAbility extends UIAbility {
     }
     // Restore the Azure client id configured on the Settings page.
     const prefs = await preferences.getPreferences(this.context, { name: PREF_NAME });
-    const clientId: string = await prefs.get(KEY_AZURE_CLIENT_ID, '') as string;
+    const clientId: string = await prefs.get(KEY_AZURE_CLIENT_ID, DEFAULT_AZURE_CLIENT_ID) as string;
     MicrosoftAuth.configure(clientId);
   }
 
