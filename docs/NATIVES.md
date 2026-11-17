@@ -107,7 +107,8 @@ Compile the clean-room Java bridge in `entry/src/main/cpp/java/`:
 ```bash
 javac -source 8 -target 8 -d build \
   entry/src/main/cpp/java/org/mc4hos/bridge/InputBridge.java \
-  entry/src/main/cpp/java/org/mc4hos/bridge/PlatformBridge.java
+  entry/src/main/cpp/java/org/mc4hos/bridge/PlatformBridge.java \
+  entry/src/main/cpp/java/org/mc4hos/bridge/SelfTest.java
 jar cf mc4hos-bridge.jar -C build .
 hdc file send mc4hos-bridge.jar <sandbox>/bridge/
 ```

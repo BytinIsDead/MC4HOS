@@ -93,10 +93,13 @@ hdc hilog | grep -E "MC4HOS|Game"
 
 ## 5. First-run verification (recommended order)
 
-1. **Self-test render** — Settings → enable *Native self-test mode* → Home →
-   PLAY. You should see the animated EGL/GLES clear-surface on the
-   XComponent with no account or downloads required. This proves
-   XComponent → `libmc4hos_core.so` → EGLNativeWindow pipeline.
+1. **Self-test (no account, no downloads)** — Settings → enable
+   *Native self-test mode* → Home → PLAY. Two validations run:
+   the **JVM self-test** (boots the embedded runtime, runs
+   `org.mc4hos.bridge.SelfTest` from the bridge jar — watch the Console
+   tab for `[MC4HOS] JVM self-test: PASS`) proves runtime pack + libjvm +
+   JNI + classpath; then the animated **EGL/GLES surface self-test**
+   proves XComponent → `libmc4hos_core.so` → EGLNativeWindow.
 2. **Console tab** — verify native `initialize()` log pump works
    (lines tagged `Game`).
 3. **Account** — configure the Azure client id (§7), sign in on the

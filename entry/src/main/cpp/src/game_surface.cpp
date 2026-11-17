@@ -32,6 +32,7 @@ uint32_t g_width = 0;
 uint32_t g_height = 0;
 
 std::atomic<bool> g_selfTestRunning{false};
+std::atomic<bool> g_selfTestPending{false};
 std::atomic<bool> g_surfaceAlive{false};
 
 // -------------------------------------------------------------------------
@@ -108,6 +109,11 @@ void OnSurfaceCreated(OH_NativeXComponent *component, void *window) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_window = window;
     g_surfaceAlive.store(true);
+    // A self-test requested before the surface existed starts now.
+    if (g_selfTestPending.exchange(false)) {
+        g_selfTestRunning.store(true);
+        std::thread(RenderLoop).detach();
+    }
     uint64_t width = 0;
     uint64_t height = 0;
     if (component != nullptr && window != nullptr) {
@@ -181,9 +187,18 @@ uint32_t SurfaceHeight() {
 
 void StartSelfTest() {
     if (!g_surfaceAlive.load() || NativeWindow() == nullptr) {
-        log::Emit("[MC4HOS] self-test requested but no surface is alive");
+        // Queue: the renderer starts automatically once the surface exists.
+        g_selfTestPending.store(true);
+        log::Emit("[MC4HOS] self-test queued — starts when the surface is created");
         return;
     }
+    if (g_selfTestRunning.exchange(true)) {
+        return;
+    }
+    std::thread(RenderLoop).detach();
+}
+
+void StartSelfTestWhenSurfaceReady() {
     if (g_selfTestRunning.exchange(true)) {
         return;
     }

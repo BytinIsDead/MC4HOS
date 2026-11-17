@@ -7,6 +7,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import fs from '@ohos.file.fs';
 import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
 import { AccountStore } from '../auth/AccountStore';
@@ -81,11 +82,71 @@ export class GameLauncher {
     return isGameRunning();
   }
 
+  /**
+   * Boots the embedded JVM with the bundled bridge jar and runs
+   * org.mc4hos.bridge.SelfTest — validates runtime pack, libjvm load, JNI
+   * and classpath with zero Mojang/account involvement. On success also
+   * queues the EGL surface self-test (renders when the game view opens).
+   */
+  private static async launchJvmSelfTest(): Promise<boolean> {
+    GameLauncher.setPhase('preparing_runtime', 'Locating an installed Java runtime');
+    const runtime = JavaRuntimeManager.firstInstalled();
+    if (runtime === null) {
+      GameLauncher.setPhase('failed',
+        'No Java runtime installed — deploy a runtime pack (docs/NATIVES.md §1)');
+      return false;
+    }
+    const bridgeJar: string = `${Paths.base()}/bridge/mc4hos-bridge.jar`;
+    if (!fs.accessSync(bridgeJar)) {
+      GameLauncher.setPhase('failed',
+        'mc4hos-bridge.jar not deployed — build it per docs/NATIVES.md §3');
+      return false;
+    }
+    const config: NativeLaunchConfig = {
+      javaHome: runtime.homePath,
+      classPath: bridgeJar,
+      nativesDirs: `${runtime.homePath}/lib/server:${runtime.homePath}/lib:${Paths.hapNativeLibraryDir()}`,
+      jvmOptions: ['-Xmx512M', '-Xms64M'],
+      mainClass: 'org.mc4hos.bridge.SelfTest',
+      gameArgs: [],
+      workingDir: Paths.gameDir(),
+      logDir: Paths.logsDir(),
+      selfTest: false
+    };
+    const started: number = await startGame(config);
+    if (started !== 0) {
+      GameLauncher.setPhase('failed', `JVM self-test failed (code ${started})`);
+      return false;
+    }
+    // Queue the EGL surface self-test; it starts when the XComponent
+    // surface is created (game view opened).
+    const surfaceConfig: NativeLaunchConfig = {
+      javaHome: '',
+      classPath: '',
+      nativesDirs: '',
+      jvmOptions: [],
+      mainClass: '',
+      gameArgs: [],
+      workingDir: Paths.gameDir(),
+      logDir: Paths.logsDir(),
+      selfTest: true
+    };
+    await startGame(surfaceConfig);
+    GameLauncher.setPhase('running', 'Self-test active — JVM booted, surface pending');
+    return true;
+  }
+
   /** Full launch pipeline. Resolves true when the JVM started. */
   public static async launch(versionId: string): Promise<boolean> {
     if (GameLauncher.running()) {
       GameLauncher.setPhase('failed', 'A game instance is already running');
       return false;
+    }
+    // Self-test mode: boot the embedded JVM with the bundled bridge jar and
+    // run org.mc4hos.bridge.SelfTest — no Mojang services, no account, no
+    // downloads. Then queue the EGL surface self-test for the game view.
+    if (AppStorage.get<boolean>('selfTestMode') ?? false) {
+      return await GameLauncher.launchJvmSelfTest();
     }
     try {
       // 1. version descriptor
@@ -100,21 +161,18 @@ export class GameLauncher {
       GameLauncher.setPhase('verifying_account', 'Checking account token');
       const token: string | null = await AccountStore.ensureValidMcToken();
       const profile = await AccountStore.loadActiveProfile();
-      const selfTest: boolean = AppStorage.get<boolean>('selfTestMode') ?? false;
       let playerName: string = 'Player';
       let playerUuid: string = '';
       let xuid: string = '';
       let mcToken: string = '0';
-      if (!selfTest) {
-        if (token === null || profile === null) {
-          GameLauncher.setPhase('failed', 'Not signed in. Add a Microsoft account first.');
-          return false;
-        }
-        playerName = profile.displayName;
-        playerUuid = profile.uuid;
-        xuid = profile.xuid;
-        mcToken = token;
+      if (token === null || profile === null) {
+        GameLauncher.setPhase('failed', 'Not signed in. Add a Microsoft account first.');
+        return false;
       }
+      playerName = profile.displayName;
+      playerUuid = profile.uuid;
+      xuid = profile.xuid;
+      mcToken = token;
 
       // 3. files
       GameLauncher.setPhase('installing', `Ensuring ${versionId} is installed`);
@@ -157,7 +215,7 @@ export class GameLauncher {
         nativesDir: Paths.nativesVersionDir(version.id),
         javaHome: runtime.homePath,
         extraJvmArgs: [],
-        selfTest: selfTest
+        selfTest: false
       };
       const builder: JvmArgumentBuilder = new JvmArgumentBuilder(ctx);
       const built: BuiltLaunch | null = builder.build();

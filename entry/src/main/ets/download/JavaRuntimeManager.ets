@@ -92,6 +92,12 @@ export class JavaRuntimeManager {
     return out;
   }
 
+  /** Any installed runtime — used by the JVM self-test (no version rule). */
+  public static firstInstalled(): RuntimeDescriptor | null {
+    const installed: Array<RuntimeDescriptor> = JavaRuntimeManager.listInstalled();
+    return installed.length > 0 ? installed[0] : null;
+  }
+
   /** Picks the runtime whose major version satisfies the game requirement. */
   public static selectFor(javaMajorRequired: number): RuntimeDescriptor | null {
     const installed: Array<RuntimeDescriptor> = JavaRuntimeManager.listInstalled();
