@@ -18,11 +18,13 @@ import sys
 
 REQUIRED = "SPDX-License-Identifier: MPL-2.0-no-copyleft-exception"
 SKIP_DIRS = {".git", "node_modules", "oh_modules", ".cxx", ".idea", "build",
-             ".hvigor", ".preview", ".zcode"}
+             ".hvigor", ".preview", ".zcode", "rawfile"}
 EXTS = {".ets", ".ts", ".cpp", ".h", ".java", ".json5", ".md", ".txt",
         ".py", ".yml", ".yaml"}
 NAMED = {"CMakeLists.txt"}
 EXEMPT = {"LICENSE", "oh-package-lock.json5", "entry/oh-package-lock.json5"}
+# Verbatim third-party license texts shipped for redistribution compliance.
+EXEMPT_DIRS = {("scripts", "licenses")}
 # Lock files are ohpm-generated; also match any *-lock.json5 by suffix.
 LOCK_SUFFIX = "-lock.json5"
 
@@ -36,7 +38,10 @@ def main() -> int:
             continue
         if p.name in EXEMPT or p.name.endswith(LOCK_SUFFIX):
             continue
-        if set(p.relative_to(root).parts) & SKIP_DIRS:
+        rel = p.relative_to(root)
+        if rel.parent.parts in EXEMPT_DIRS:
+            continue
+        if set(rel.parts) & SKIP_DIRS:
             continue
         if p.suffix.lower() not in EXTS and p.name not in NAMED:
             continue

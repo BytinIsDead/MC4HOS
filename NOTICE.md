@@ -38,9 +38,12 @@ Microsoft, or OpenHarmony/Huawei.
 
 At runtime the launcher *downloads from official servers* (at the direction of
 the signed-in user, who must own a licensed copy of the game) and *executes*
-the following third-party components, which are **not included in this
-repository** and must be built from their pristine upstream sources by anyone
-distributing MC4HOS binaries:
+the following third-party components, which are **not committed to this
+repository**. Binary distributions may bundle them: the build scripts fetch
+the pinned runtime archives at build time
+(`scripts/bundled-jres.lock.json`). Anyone distributing those binaries must
+satisfy the licenses below, including the corresponding-source offer for
+OpenJDK.
 
 | Component | Role | License | Upstream |
 |---|---|---|---|
@@ -55,11 +58,30 @@ NOTICE propagation) apply to those binaries per their respective licenses.
 The build scripts in `openharmony-jdk/` are original MC4HOS code under this
 repository's MPL-2.0 terms. They **download** the third-party OpenJDK source
 and the OHOS patch/stub archives at build time; those archives and the
-resulting JDK images are GPLv2+CE works and are never committed. Each
-produced x86_64 runtime pack preserves the upstream license files and records
-its exact source repositories, commits, and build-input identity. The
-aarch64 runtime packs are downloaded from pinned public community releases
-and retain their own notices.
+resulting JDK images are GPLv2+CE works and are never committed.
+
+When runtime packs are bundled into the HAP (the default build for aarch64
+Java 8/17/21/25; x86_64 21/25 once the `jdk-x86_64-v1` release exists), the
+HAP redistributes OpenJDK, so GPLv2+CE redistribution terms apply to those
+parts. The build writes `resources/rawfile/jvm/OpenJDK-LICENSE.txt` (GPLv2
+plus the Classpath Exception appendix) and `RUNTIME-NOTICES.txt` next to the
+packs, naming each pack's pinned source identity; the launcher copies both
+into the extracted runtime. The JDK8 pack additionally keeps its upstream
+`jre/LICENSE` and `jre/ASSEMBLY_EXCEPTION`.
+
+Corresponding source for the GPLv2+CE code in a bundled pack:
+
+- x86_64 packs record the upstream source repositories, commits and pinned
+  build-input archives in their `MC4HOS-RUNTIME-NOTICE.txt` and
+  `openharmony-jdk/build-inputs.lock.json`.
+- aarch64 packs come unmodified from the pinned public community releases
+  listed in `scripts/bundled-jres.lock.json`; use the source identities those
+  releases publish, or request the corresponding source from the distributor.
+
+The full GPLv2 text shipped in the HAP, the pinned identities above, and the
+source offer to any recipient satisfy GPLv2 section 3. Redistributors who
+modify this project must preserve the license files, the pack notices and
+that offer; the Classpath Exception does not remove these GPL obligations.
 
 **Trademark notice:** *Minecraft* is a trademark of Mojang Synergies AB. The
 name "MC4HOS" refers to this launcher in a purely descriptive, nominative

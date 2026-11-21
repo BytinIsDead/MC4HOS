@@ -9,6 +9,7 @@
 
 import fs from '@ohos.file.fs';
 import zlib from '@ohos.zlib';
+import resourceManager from '@ohos.resourceManager';
 import { downloadToFile, getJson } from '../common/Http';
 import { sha256HexOf } from './DownloadShared';
 import {
@@ -37,6 +38,13 @@ const COMMUNITY_RELEASE_BASE: string =
   'https://github.com/LZZLHY/mc-ohos-resources/releases/download';
 const X86_RELEASE_BASE: string =
   'https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1';
+
+/**
+ * Runtime packs shipped inside the HAP under resources/rawfile/jvm/. The
+ * build scripts fetch them at build time (never committed); a pack that is
+ * present here is extracted on first use instead of being downloaded.
+ */
+const BUNDLED_RAW_PREFIX: string = 'jvm/';
 
 export interface RuntimeDescriptor {
   name: string;
@@ -231,6 +239,219 @@ export class JavaRuntimeManager {
     return false;
   }
 
+  /** True when a runtime pack with this catalog name ships in the HAP. */
+  private static hasBundledAsset(packName: string): boolean {
+    const asset: string = `${BUNDLED_RAW_PREFIX}${packName}.zip`;
+    try {
+      const rm = getContext().resourceManager;
+      const raw: resourceManager.RawFileDescriptor = rm.getRawFdSync(asset);
+      rm.closeRawFdSync(asset);
+      return raw.length > 0;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /** Bundled packs for the device ABI, in ascending major order. */
+  private static bundledPacksFor(abi: string): Array<RuntimePackSource> {
+    const out: Array<RuntimePackSource> = [];
+    for (const pack of runtimeCatalog) {
+      if (pack.abi === abi && JavaRuntimeManager.hasBundledAsset(pack.name)) {
+        out.push(pack);
+      }
+    }
+    out.sort((a: RuntimePackSource, b: RuntimePackSource) => a.javaMajor - b.javaMajor);
+    return out;
+  }
+
+  /** Copies a rawfile range into a sandbox file, chunked. */
+  private static copyRawAsset(raw: resourceManager.RawFileDescriptor,
+    destPath: string): boolean {
+    const out = fs.openSync(destPath,
+      fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+    const buffer: ArrayBuffer = new ArrayBuffer(1024 * 1024);
+    let copied: number = 0;
+    try {
+      while (copied < raw.length) {
+        const want: number = Math.min(buffer.byteLength, raw.length - copied);
+        const read: number = fs.readSync(raw.fd, buffer, {
+          offset: raw.offset + copied,
+          length: want
+        });
+        if (read <= 0) {
+          break;
+        }
+        fs.writeSync(out.fd, buffer, { offset: copied, length: read });
+        copied += read;
+      }
+    } finally {
+      fs.closeSync(out);
+    }
+    return copied === raw.length;
+  }
+
+  /**
+   * Copies the bundled OpenJDK license/notice files into an extracted runtime
+   * so the license text travels with the binaries. Best effort.
+   */
+  private static copyBundledNotices(homePath: string): void {
+    const names: Array<string> = ['RUNTIME-NOTICES.txt', 'OpenJDK-LICENSE.txt'];
+    for (const name of names) {
+      try {
+        const data: Uint8Array = getContext().resourceManager
+          .getRawFileContentSync(`${BUNDLED_RAW_PREFIX}${name}`);
+        const out = fs.openSync(`${homePath}/${name}`,
+          fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+        try {
+          const bytes: ArrayBuffer =
+            data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+          fs.writeSync(out.fd, bytes);
+        } finally {
+          fs.closeSync(out);
+        }
+      } catch (err) {
+        const e = err as Error;
+        Logger.warn(TAG, `bundled notice ${name} not copied: ${e.message}`);
+      }
+    }
+  }
+
+  /**
+   * Extracts a bundled pack (resources/rawfile/jvm/<name>.zip) and writes the
+   * runtime.json marker. Returns false when the pack is absent or invalid.
+   */
+  public static async installBundled(pack: RuntimePackSource): Promise<boolean> {
+    const abi: string = Paths.deviceAbi();
+    if (pack.abi !== abi) {
+      return false;
+    }
+    const destDir: string = Paths.jvmRuntimeDir(pack.name);
+    if (fs.accessSync(`${destDir}/runtime.json`) &&
+        JavaRuntimeManager.findJvmHome(destDir).length > 0) {
+      return true;
+    }
+    const asset: string = `${BUNDLED_RAW_PREFIX}${pack.name}.zip`;
+    const zipPath: string = `${Paths.jvmDir()}/${pack.name}.zip`;
+    Paths.ensureDir(Paths.jvmDir());
+    try {
+      const rm = getContext().resourceManager;
+      const raw: resourceManager.RawFileDescriptor = rm.getRawFdSync(asset);
+      try {
+        if (!JavaRuntimeManager.copyRawAsset(raw, zipPath)) {
+          Logger.error(TAG, `bundled runtime ${asset} is truncated`);
+          if (fs.accessSync(zipPath)) {
+            fs.unlinkSync(zipPath);
+          }
+          return false;
+        }
+      } finally {
+        rm.closeRawFdSync(asset);
+      }
+    } catch (err) {
+      const e = err as Error;
+      Logger.warn(TAG, `bundled runtime ${asset} cannot be read: ${e.message}`);
+      return false;
+    }
+    if (pack.sizeBytes > 0 && fs.statSync(zipPath).size !== pack.sizeBytes) {
+      Logger.error(TAG, `bundled runtime size mismatch for ${pack.name}`);
+      fs.unlinkSync(zipPath);
+      return false;
+    }
+    if (pack.sha256.length > 0) {
+      const actual: string = await sha256HexOf(zipPath);
+      if (actual !== pack.sha256.toLowerCase()) {
+        Logger.error(TAG, `bundled runtime sha256 mismatch for ${pack.name}`);
+        fs.unlinkSync(zipPath);
+        return false;
+      }
+    }
+    Logger.info(TAG, `extracting bundled runtime ${pack.name}`);
+    return await JavaRuntimeManager.finalizePack(pack, zipPath);
+  }
+
+  /** Extracts a downloaded or bundled zip and writes the marker. */
+  private static async finalizePack(pack: RuntimePackSource,
+    zipPath: string): Promise<boolean> {
+    const destDir: string = Paths.jvmRuntimeDir(pack.name);
+    Paths.ensureDir(destDir);
+    let extracted: boolean = false;
+    try {
+      await zlib.decompressFile(zipPath, destDir);
+      extracted = true;
+    } catch (err) {
+      const e = err as Error;
+      Logger.error(TAG, `runtime extraction failed: ${e.message}`);
+    } finally {
+      try {
+        if (fs.accessSync(zipPath)) {
+          fs.unlinkSync(zipPath);
+        }
+      } catch (cleanupErr) {
+        // best effort
+      }
+    }
+    if (!extracted) {
+      return false;
+    }
+    const homePath: string = JavaRuntimeManager.findJvmHome(destDir);
+    if (homePath.length === 0) {
+      Logger.error(TAG, `runtime ${pack.name} extracted without a discoverable libjvm.so`);
+      return false;
+    }
+    JavaRuntimeManager.copyBundledNotices(homePath);
+    const descriptor: RuntimeDescriptor = {
+      name: pack.name,
+      javaMajor: pack.javaMajor,
+      abi: pack.abi,
+      homePath: homePath
+    };
+    Paths.writeTextFileSync(`${destDir}/runtime.json`, JSON.stringify(descriptor));
+    return true;
+  }
+
+  /**
+   * Extracts the nearest bundled runtime that satisfies the required major.
+   * Returns null when nothing suitable ships in the HAP.
+   */
+  private static async ensureBundledFor(
+    javaMajorRequired: number): Promise<RuntimeDescriptor | null> {
+    const candidates: Array<RuntimePackSource> =
+      JavaRuntimeManager.bundledPacksFor(Paths.deviceAbi())
+        .filter((pack: RuntimePackSource) => pack.javaMajor >= javaMajorRequired);
+    for (const pack of candidates) {
+      if (await JavaRuntimeManager.installBundled(pack)) {
+        const selected: RuntimeDescriptor | null =
+          JavaRuntimeManager.selectFor(javaMajorRequired);
+        if (selected !== null) {
+          return selected;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Extracts any bundled runtime (newest first). Used before the no-account
+   * JVM self-test so a fresh install has something to boot.
+   */
+  public static async ensureAnyBundled(): Promise<RuntimeDescriptor | null> {
+    const existing: RuntimeDescriptor | null = JavaRuntimeManager.firstInstalled();
+    if (existing !== null) {
+      return existing;
+    }
+    const candidates: Array<RuntimePackSource> =
+      JavaRuntimeManager.bundledPacksFor(Paths.deviceAbi()).reverse();
+    for (const pack of candidates) {
+      if (await JavaRuntimeManager.installBundled(pack)) {
+        const installed: RuntimeDescriptor | null = JavaRuntimeManager.firstInstalled();
+        if (installed !== null) {
+          return installed;
+        }
+      }
+    }
+    return null;
+  }
+
   private static subdirs(dir: string): Array<string> {
     const out: Array<string> = [];
     try {
@@ -395,36 +616,8 @@ export class JavaRuntimeManager {
     } else {
       Logger.warn(TAG, `runtime pack ${pack.name} has no pinned sha256`);
     }
-    Paths.ensureDir(destDir);
-    try {
-      await zlib.decompressFile(zipPath, destDir);
-      Logger.info(TAG, `runtime ${pack.name} extracted to ${destDir}`);
-    } catch (err) {
-      const e = err as Error;
-      Logger.error(TAG, `runtime extraction failed: ${e.message}`);
-      return false;
-    } finally {
-      try {
-        if (fs.accessSync(zipPath)) {
-          fs.unlinkSync(zipPath);
-        }
-      } catch (cleanupErr) {
-        // best effort
-      }
-    }
-    const homePath: string = JavaRuntimeManager.findJvmHome(destDir);
-    if (homePath.length === 0) {
-      Logger.error(TAG, `runtime ${pack.name} extracted without a discoverable libjvm.so`);
-      return false;
-    }
-    const descriptor: RuntimeDescriptor = {
-      name: pack.name,
-      javaMajor: pack.javaMajor,
-      abi: pack.abi,
-      homePath: homePath
-    };
-    Paths.writeTextFileSync(marker, JSON.stringify(descriptor));
-    return true;
+    Logger.info(TAG, `runtime ${pack.name} downloaded`);
+    return await JavaRuntimeManager.finalizePack(pack, zipPath);
   }
 
   /**
@@ -435,6 +628,11 @@ export class JavaRuntimeManager {
     const existing: RuntimeDescriptor | null = JavaRuntimeManager.selectFor(javaMajorRequired);
     if (existing !== null) {
       return existing;
+    }
+    const bundled: RuntimeDescriptor | null =
+      await JavaRuntimeManager.ensureBundledFor(javaMajorRequired);
+    if (bundled !== null) {
+      return bundled;
     }
     await JavaRuntimeManager.refreshCatalog();
     const pack: RuntimePackSource | null = JavaRuntimeManager.catalogFor(javaMajorRequired);

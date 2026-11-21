@@ -32,12 +32,20 @@ required by current Minecraft releases (26.x); 1.20.5–1.21.x need 21 and
 1.12.2 needs 8. The launcher selects an exact or newer major, never an older
 one, so Java 21 also covers 1.17–1.20.4.
 
-### aarch64 (prebuilt, pinned)
+### aarch64 (prebuilt, pinned, bundled)
 
 The built-in catalog in
 `entry/src/main/ets/download/JavaRuntimeManager.ets` points at public
 community OpenHarmony builds of JDK 8/17/21/25. Every entry pins the archive
 size and SHA-256; downloads are rejected on any mismatch.
+
+At build time `scripts/fetch_bundled_jres.py` downloads those same pinned
+archives into `entry/src/main/resources/rawfile/jvm/` (gitignored), so the
+HAP carries all four aarch64 runtimes (~390 MB) and the app can extract them
+offline on first use. The lock file is
+`scripts/bundled-jres.lock.json`; `BUNDLE_JRES=0` skips the fetch for a
+smaller HAP that downloads packs instead. The pack archives are never
+committed (100 MB GitHub file limit and GPLv2+CE source-offer hygiene).
 
 ### x86_64 (built in this repository's CI)
 
@@ -47,7 +55,9 @@ cross-compiles the same pinned upstream JDK sources and OHOS patch series for
 `jre21-ohos-x86_64.zip` and `jre25-ohos-x86_64.zip`, uploads artifacts, and —
 when run with `publish = true` — publishes them plus `runtime-catalog.json`
 to the `jdk-x86_64-v1` release. The launcher fetches that catalog to obtain
-the per-build SHA-256 before downloading. See `openharmony-jdk/README.md`
+the per-build SHA-256 before downloading. Once the release exists, the build
+scripts also fetch and bundle both packs (their lock entries are optional
+until then). See `openharmony-jdk/README.md`
 for the local build command and licensing requirements.
 
 Key configure details (both ABIs, OpenJDK 21/25 scheme):
@@ -158,6 +168,7 @@ automatically when the file exists.
 
 | Artifact | Path in sandbox | Consumed by |
 |---|---|---|
+| bundled pack (in HAP) | `resources/rawfile/jvm/jre<major>-ohos-<abi>.zip` | `JavaRuntimeManager.installBundled()` (extracted on first use) |
 | libjvm.so | `jvm/<name>/lib/server/libjvm.so` or `jvm/<name>/jre/lib/<arch>/server/libjvm.so` | `jvm_loader.cpp` (dlopen) |
 | runtime.json | `jvm/<name>/runtime.json` (homePath = normalized JRE root) | `JavaRuntimeManager.listInstalled()` |
 | mc4hos-bridge.jar | `bridge/mc4hos-bridge.jar` (ABI-independent bytecode) | classpath head |

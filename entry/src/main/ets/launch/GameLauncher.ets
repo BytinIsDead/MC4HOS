@@ -98,7 +98,7 @@ export class GameLauncher {
    */
   private static async launchJvmSelfTest(): Promise<boolean> {
     GameLauncher.setPhase('preparing_runtime', 'Locating an installed Java runtime');
-    const runtime = JavaRuntimeManager.firstInstalled();
+    const runtime = await JavaRuntimeManager.ensureAnyBundled();
     if (runtime === null) {
       GameLauncher.setPhase('failed',
         'No Java runtime installed — deploy a runtime pack (docs/NATIVES.md §1)');

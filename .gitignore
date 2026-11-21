@@ -30,3 +30,6 @@ openharmony-jdk/dist/
 # ohpm lock files regenerate per-platform; commit none
 oh-package-lock.json5
 entry/oh-package-lock.json5
+
+# runtime packs fetched at build time and bundled into the HAP (never committed)
+/entry/src/main/resources/rawfile/jvm/

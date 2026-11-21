@@ -12,6 +12,7 @@ import { VersionsPage } from './VersionsPage.ets';
 import { ConsolePage } from './ConsolePage.ets';
 import { AccountsPage } from './AccountsPage.ets';
 import { SettingsPage } from './SettingsPage.ets';
+import { LicensesPage } from './LicensesPage.ets';
 import { GamePageView } from './GamePage.ets';
 import { ControlsEditorPage } from './ControlsEditorPage.ets';
 
@@ -74,6 +75,11 @@ struct Index {
             SettingsPage()
           }
           .tabBar(this.tabItem('Settings', '⚙', 4))
+
+          TabContent() {
+            LicensesPage()
+          }
+          .tabBar(this.tabItem('Licenses', '©', 5))
         }
         .barMode(BarMode.Fixed)
         .onChange((index: number) => {

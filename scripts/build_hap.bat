@@ -7,8 +7,8 @@ rem License, v. 2.0. If a copy of the MPL was not distributed with this
 rem file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 rem Builds the HAP locally, using the DevEco Studio installation on this
-rem machine. No downloads, no repository variables, no secrets - "the thing
-rem itself" already contains everything needed (SDK, hvigor, ohpm, node).
+rem machine. Runtime packs are fetched at build time and bundled inside the
+rem HAP; set BUNDLE_JRES=0 to build without them.
 rem
 rem Override the install location with:  set DEVECO_STUDIO_HOME=<dir>
 setlocal enabledelayedexpansion
@@ -40,8 +40,18 @@ if exist "%DEVECO_STUDIO_HOME%\tools\ohpm\bin\ohpm.bat" (
   echo [warn] ohpm not found under tools\ohpm - skipping dependency install
 )
 
-rem --- build ---------------------------------------------------------------
+rem --- bundled runtimes -----------------------------------------------------
 cd /d "%ROOT%"
+if not "%BUNDLE_JRES%"=="0" (
+  echo Fetching bundled Java runtimes ^(set BUNDLE_JRES=0 to skip^)...
+  python "%ROOT%\scripts\fetch_bundled_jres.py" --dest "%ROOT%\entry\src\main\resources\rawfile\jvm"
+  if errorlevel 1 (
+    echo ERROR: bundled runtime fetch failed
+    exit /b 1
+  )
+)
+
+rem --- build ---------------------------------------------------------------
 echo Building HAP ^(debug, unsigned^)...
 call "%NODE%" "%HVIGORW_JS%" --mode module -p module=entry@default -p product=default assembleHap
 if errorlevel 1 (

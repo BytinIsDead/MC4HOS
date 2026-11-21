@@ -7,8 +7,10 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 # Builds the HAP locally using the DevEco Studio installation (or the
-# standalone commandline-tools package) on this machine — no downloads,
-# no repository variables, no secrets. Windows users: use build_hap.bat.
+# standalone commandline-tools package) on this machine — no repository
+# variables, no secrets. Runtime packs are fetched at build time and bundled
+# inside the HAP; set BUNDLE_JRES=0 to build without them.
+# Windows users: use build_hap.bat.
 #
 # Override the install location with:  export DEVECO_STUDIO_HOME=<dir>
 
@@ -54,6 +56,12 @@ else
 fi
 
 cd "$ROOT"
+if [ "${BUNDLE_JRES:-1}" != "0" ]; then
+  echo "Fetching bundled Java runtimes (set BUNDLE_JRES=0 to skip)..."
+  python3 "$ROOT/scripts/fetch_bundled_jres.py" \
+    --dest "$ROOT/entry/src/main/resources/rawfile/jvm"
+fi
+
 echo "Building HAP (debug, unsigned)..."
 "$NODE_BIN" "$HVIGORW_JS" --mode module -p module=entry@default -p product=default assembleHap
 

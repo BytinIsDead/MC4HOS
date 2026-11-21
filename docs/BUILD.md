@@ -22,7 +22,7 @@ sources by *you* (see [NATIVES.md](NATIVES.md)).
 | HarmonyOS SDK | API **24** (`compatibleSdkVersion: "6.1.1(24)"`) | Enable **Native SDK** (C++ toolchain) in SDK manager |
 | Device / emulator | HarmonyOS 6.1.1, **arm64-v8a or x86_64** | Real device recommended (JVM + GPU required). The OHOS NDK has no 32-bit x86 ABI; the emulator and Intel 2-in-1s run `x86_64` |
 | hdc | from SDK | `hdc install`, `hdc file send`, logs via `hdc hilog` |
-| (runtime) OpenJDK OHOS builds | aarch64: 8 / 17 / 21 / 25; x86_64: 21 / 25 | aarch64 packs are downloaded from pinned public builds; x86_64 packs are built by [openharmony-jdk](../openharmony-jdk/README.md) · see [NATIVES.md](NATIVES.md); latest Minecraft releases require Java 25 |
+| (runtime) OpenJDK OHOS builds | aarch64: 8 / 17 / 21 / 25; x86_64: 21 / 25 | aarch64 packs are fetched at build time and bundled in the HAP; x86_64 packs are built by [openharmony-jdk](../openharmony-jdk/README.md) and bundled once the release is published (otherwise downloaded/imported) · see [NATIVES.md](NATIVES.md); latest Minecraft releases require Java 25 |
 | (runtime) LWJGL / OpenAL-Soft OHOS builds | 3.3.x × both ABIs | produced per [NATIVES.md](NATIVES.md) |
 
 ## 2. Open and configure the project
@@ -69,9 +69,19 @@ DevEco (GUI): `Build → Build Hap(s)/APP(s) → Build Hap(s)`.
 Command line:
 
 ```bash
+python3 scripts/fetch_bundled_jres.py   # once; build scripts do this automatically
 hvigorw assembleHap --mode module -p product=default -p buildMode=release
 # artifact: entry/build/default/outputs/default/entry-default-signed.hap
 ```
+
+The fetch step downloads the pinned packs from
+`scripts/bundled-jres.lock.json` into
+`entry/src/main/resources/rawfile/jvm/` (gitignored) so hvigor packages them
+as stored rawfiles: roughly 390 MB of aarch64 runtimes (8/17/21/25), plus
+x86_64 packs once the `jdk-x86_64-v1` release exists. Set `BUNDLE_JRES=0`
+when using `scripts/build_hap.*` to build a small HAP without bundled
+runtimes; the app then downloads packs on demand. Building from the DevEco
+GUI does not run the fetch step.
 
 The CMake native build (`entry/src/main/cpp/CMakeLists.txt`) runs once per
 ABI in `abiFilters` and produces `libmc4hos_core.so` for **`arm64-v8a` and
@@ -93,8 +103,10 @@ hdc hilog | grep -E "MC4HOS|Game"
 
 ## 5. First-run verification (recommended order)
 
-1. **Self-test (no account, no downloads)** — Settings → enable
-   *Native self-test mode* → Home → PLAY. Two validations run:
+1. **Self-test (no account, no network)** — Settings → enable
+   *Native self-test mode* → Home → PLAY. If no runtime is installed yet,
+   the launcher extracts a bundled pack from `resources/rawfile/jvm/` first.
+   Two validations run:
    the **JVM self-test** (boots the embedded runtime, runs
    `org.mc4hos.bridge.SelfTest` from the bridge jar — watch the Console
    tab for `[MC4HOS] JVM self-test: PASS`) proves runtime pack + libjvm +
@@ -105,12 +117,15 @@ hdc hilog | grep -E "MC4HOS|Game"
 3. **Account** — configure the Azure client id (§7), sign in on the
    Accounts tab (device-code flow).
 4. **Versions tab** — install a release (client jar + libraries + assets).
-5. **Runtime** — install an OpenHarmony JRE pack (§6), confirm
+5. **Runtime** — the launcher extracts the bundled pack that matches the
+   device ABI and the version's required major on first use (aarch64 Java
+   8/17/21/25; x86_64 21/25 once the release exists). Confirm
    `jvm/jre<major>-ohos-<abi>/runtime.json` exists (the launcher logs the
    device ABI at startup: `device ABI: arm64-v8a` / `x86_64`). Use the
    major required by the version JSON (`javaVersion.majorVersion`); current
    releases require **25**, 1.20.5–1.21.x require **21**, and 1.12.2
-   requires **8**. Selection never falls back to an older major.
+   requires **8**. Selection never falls back to an older major. Deploy a
+   pack manually (§6) only when the needed ABI/major is not bundled.
 6. **Natives** — deploy `liblwjgl.so` etc. into
    `files/mc4hos/natives/<mcVersion>/<abi>/` (§6), plus
    `bridge/mc4hos-bridge.jar`.
@@ -118,7 +133,12 @@ hdc hilog | grep -E "MC4HOS|Game"
 
 ## 6. Deploying runtimes and natives onto the device
 
-**Recommended (works on every device): the in-app importer.**
+**Bundled runtimes need no deployment.** The HAP carries
+`resources/rawfile/jvm/*.zip` (fetched at build time) and extracts the
+matching pack into the sandbox on first use — no network, no `hdc`.
+
+**Manual runtime import** (when a pack is not bundled, e.g. x86_64 before the
+release is published): the in-app importer works on every device.
 `hdc file send` into app sandboxes often fails with "No such file or
 directory" / permission errors — but `/data/local/tmp` is world-writable:
 
@@ -159,7 +179,9 @@ sandbox may hold both architectures side by side
 Packs installed by `JavaRuntimeManager.install()` must match the device ABI,
 carry a pinned SHA-256 and size in the catalog, and contain a discoverable
 `libjvm.so` (`lib/server/` for modern JDKs, `lib/<arch>/server/` for JDK8);
-otherwise installation is rejected. Imported packs (Settings → Deployment)
+otherwise installation is rejected. Bundled packs go through the same size,
+digest (when pinned) and layout checks after being copied out of the HAP.
+Imported packs (Settings → Deployment)
 are parsed from their `jre<major>-ohos-<abi>.zip` (or `jdk…`) name and use
 the same layout discovery.
 
@@ -246,7 +268,11 @@ secrets and no repository variables required**:
    `python3 scripts/check_configs.py` (strict-JSON resources, no `#` in
    json5, modelVersion consistency, SDK string format/ordering,
    buildVersion, PNG icons).
-2. **build** — full unsigned HAP on GitHub-hosted runners. The HarmonyOS
+2. **build** — full unsigned HAP on GitHub-hosted runners. Before building,
+   `scripts/fetch_bundled_jres.py` downloads the pinned runtime packs into
+   `entry/src/main/resources/rawfile/jvm/` (cached by
+   `scripts/bundled-jres.lock.json`); aarch64 packs are required, x86_64
+   packs are optional until the `jdk-x86_64-v1` release exists. The HarmonyOS
    toolchain (commandline-tools 6.1.1.280, bundled SDK = API 24, matching
    `modelVersion` 6.1.1) is fetched from **public, login-free sources** —
    Huawei's own download page is login-gated, so the workflow uses a public
@@ -335,7 +361,9 @@ Java runtime requirements (from live Mojang metadata): the current release
 requires **Java 8**. The runtime catalog covers aarch64 Java 8/17/21/25 and
 x86_64 Java 21/25, filters by device ABI, verifies the pack size and
 SHA-256, discovers the JDK8 or modern `libjvm.so` layout, and never selects
-an older major than the game requires.
+an older major than the game requires. aarch64 packs are bundled in the HAP
+and extracted before any download is attempted; the same verification runs
+on the extracted copy.
 
 Limitation: the JVM is linked in-process, so `System.exit` (used by "Leave
 game") terminates the app process. A restartable/background game session

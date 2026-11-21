@@ -139,6 +139,18 @@ jobs:
             echo "SO-TYPES LINK: MISSING"
           fi
 
+      - name: Cache bundled Java runtimes
+        uses: actions/cache@v4
+        with:
+          path: entry/src/main/resources/rawfile/jvm
+          key: bundled-jres-${{ hashFiles('scripts/bundled-jres.lock.json') }}
+
+      - name: Fetch bundled Java runtimes
+        run: |
+          python3 scripts/fetch_bundled_jres.py \
+            --dest entry/src/main/resources/rawfile/jvm
+          ls -la entry/src/main/resources/rawfile/jvm || true
+
       - name: Build HAP (debug, unsigned)
         run: hvigorw --mode module -p module=entry@default -p product=default assembleHap
 

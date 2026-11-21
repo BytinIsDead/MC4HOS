@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "description": "Runtime packs fetched at build time and bundled into the HAP rawfile. Binaries are never committed.",
+  "x86CatalogUrl": "https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1/runtime-catalog.json",
+  "packs": [
+    {
+      "name": "jre8-ohos-aarch64",
+      "javaMajor": 8,
+      "abi": "arm64-v8a",
+      "url": "https://github.com/LZZLHY/mc-ohos-resources/releases/download/v8u452-ohos-4/jdk8-ohos-full-v4.zip",
+      "sha256": "02c2cedb3539682de3df3d7870b855bfefaac1f4cfe53951cfe90b0dea3d3a63",
+      "sizeBytes": 39555296,
+      "optional": false
+    },
+    {
+      "name": "jre17-ohos-aarch64",
+      "javaMajor": 17,
+      "abi": "arm64-v8a",
+      "url": "https://github.com/LZZLHY/mc-ohos-resources/releases/download/v17.0.13-ohos-5/jdk17-ohos-full-v5.zip",
+      "sha256": "0e26b0dece38156838456cfb12058d863aa9856cdd8fd648f06f9bc5e91f8ecd",
+      "sizeBytes": 113762513,
+      "optional": false
+    },
+    {
+      "name": "jre21-ohos-aarch64",
+      "javaMajor": 21,
+      "abi": "arm64-v8a",
+      "url": "https://github.com/LZZLHY/mc-ohos-resources/releases/download/v21.0.5-ohos-7/jdk21-ohos-full-v7.zip",
+      "sha256": "21556d0d4fc5eea09ba27068cf8a96803bb1667b35adbc8495fdc5f831316275",
+      "sizeBytes": 114267146,
+      "optional": false
+    },
+    {
+      "name": "jre25-ohos-aarch64",
+      "javaMajor": 25,
+      "abi": "arm64-v8a",
+      "url": "https://github.com/LZZLHY/mc-ohos-resources/releases/download/v25.0.4-ohos-2/jdk25-ohos-full-v2.zip",
+      "sha256": "d8e31df5d199a9b34d6d13c188b71af19c2fb1738da7bf3c6eeaed89a0a37538",
+      "sizeBytes": 118872200,
+      "optional": false
+    },
+    {
+      "name": "jre21-ohos-x86_64",
+      "javaMajor": 21,
+      "abi": "x86_64",
+      "url": "https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1/jre21-ohos-x86_64.zip",
+      "sha256": "",
+      "sizeBytes": 0,
+      "optional": true
+    },
+    {
+      "name": "jre25-ohos-x86_64",
+      "javaMajor": 25,
+      "abi": "x86_64",
+      "url": "https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1/jre25-ohos-x86_64.zip",
+      "sha256": "",
+      "sizeBytes": 0,
+      "optional": true
+    }
+  ]
+}
