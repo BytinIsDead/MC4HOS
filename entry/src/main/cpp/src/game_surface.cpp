@@ -11,6 +11,7 @@
 #include "input_bridge.h"
 #include "log_capture.h"
 #include "jni_bridge.h"
+#include "jvm_loader.h"
 
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <EGL/egl.h>
@@ -28,8 +29,8 @@ namespace {
 
 std::mutex g_mutex;
 void *g_window = nullptr;
-uint32_t g_width = 0;
-uint32_t g_height = 0;
+std::atomic<uint32_t> g_width{0};
+std::atomic<uint32_t> g_height{0};
 
 std::atomic<bool> g_selfTestRunning{false};
 std::atomic<bool> g_selfTestPending{false};
@@ -81,15 +82,16 @@ void RenderLoop() {
         return;
     }
 
-    log::Emit("[MC4HOS] self-test renderer online: " + std::to_string(g_width) + "x" +
-              std::to_string(g_height));
+    log::Emit("[MC4HOS] self-test renderer online: " + std::to_string(g_width.load()) + "x" +
+              std::to_string(g_height.load()));
     // Verification loop: animated clear color + swap. Proves the
     // XComponent -> EGLNativeWindow -> GLES surface pipeline end to end;
     // the game itself renders through the JVM-side LWJGL stack on the same
     // native window.
     float intensity = 0.0f;
     while (g_selfTestRunning.load() && g_surfaceAlive.load()) {
-        glViewport(0, 0, g_width, g_height);
+        glViewport(0, 0, static_cast<GLsizei>(g_width.load()),
+                   static_cast<GLsizei>(g_height.load()));
         intensity = 0.5f + 0.5f * std::sin(intensity + 0.05f);
         glClearColor(0.10f + 0.1f * intensity, 0.24f + 0.3f * intensity, 0.16f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -103,37 +105,79 @@ void RenderLoop() {
     log::Emit("[MC4HOS] self-test renderer stopped");
 }
 
+void NotifyJavaSurface(uint32_t width, uint32_t height) {
+    if (!jvm::IsJvmRunning()) {
+        return;
+    }
+    JNIEnv *env = jni::AttachCurrentThread();
+    if (env == nullptr) {
+        return;
+    }
+    jvalue args[2];
+    args[0].i = static_cast<jint>(width);
+    args[1].i = static_cast<jint>(height);
+    jni::CallStaticVoid(env, "org/mc4hos/bridge/PlatformBridge",
+                        "onGameSurfaceChanged", "(II)V", args);
+}
+
 } // namespace
 
 void OnSurfaceCreated(OH_NativeXComponent *component, void *window) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_window = window;
-    g_surfaceAlive.store(true);
-    // A self-test requested before the surface existed starts now.
-    if (g_selfTestPending.exchange(false)) {
-        g_selfTestRunning.store(true);
+    bool startSelfTest = false;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_window = window;
+        g_surfaceAlive.store(true);
+        if (component != nullptr && window != nullptr) {
+            uint64_t sizeW = 0;
+            uint64_t sizeH = 0;
+            OH_NativeXComponent_GetXComponentSize(component, window, &sizeW, &sizeH);
+            width = static_cast<uint32_t>(sizeW);
+            height = static_cast<uint32_t>(sizeH);
+            g_width.store(width);
+            g_height.store(height);
+        } else {
+            width = g_width.load();
+            height = g_height.load();
+        }
+        log::Emit("[MC4HOS] surface created " + std::to_string(width) + "x" +
+                  std::to_string(height));
+        // Start the renderer only after geometry is known so the first
+        // frame uses the real viewport.
+        startSelfTest = g_selfTestPending.exchange(false);
+        if (startSelfTest) {
+            g_selfTestRunning.store(true);
+        }
+    }
+    if (startSelfTest) {
         std::thread(RenderLoop).detach();
     }
-    uint64_t width = 0;
-    uint64_t height = 0;
-    if (component != nullptr && window != nullptr) {
-        OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
-        g_width = static_cast<uint32_t>(width);
-        g_height = static_cast<uint32_t>(height);
-    }
-    log::Emit("[MC4HOS] surface created " + std::to_string(g_width) + "x" +
-              std::to_string(g_height));
+    NotifyJavaSurface(width, height);
 }
 
 void OnSurfaceChanged(OH_NativeXComponent *component, void *window) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    uint64_t width = 0;
-    uint64_t height = 0;
-    if (component != nullptr && window != nullptr) {
-        OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
-        g_width = static_cast<uint32_t>(width);
-        g_height = static_cast<uint32_t>(height);
+    uint32_t width = 0;
+    uint32_t height = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        if (component != nullptr && window != nullptr) {
+            uint64_t sizeW = 0;
+            uint64_t sizeH = 0;
+            OH_NativeXComponent_GetXComponentSize(component, window, &sizeW, &sizeH);
+            width = static_cast<uint32_t>(sizeW);
+            height = static_cast<uint32_t>(sizeH);
+            g_width.store(width);
+            g_height.store(height);
+        } else {
+            width = g_width.load();
+            height = g_height.load();
+        }
+        log::Emit("[MC4HOS] surface changed " + std::to_string(width) + "x" +
+                  std::to_string(height));
     }
+    NotifyJavaSurface(width, height);
 }
 
 void OnSurfaceDestroyed(OH_NativeXComponent *component, void *window) {
@@ -176,13 +220,11 @@ void *NativeWindow() {
 }
 
 uint32_t SurfaceWidth() {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    return g_width;
+    return g_width.load();
 }
 
 uint32_t SurfaceHeight() {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    return g_height;
+    return g_height.load();
 }
 
 void StartSelfTest() {

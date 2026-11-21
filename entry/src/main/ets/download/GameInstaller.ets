@@ -8,11 +8,12 @@
  */
 
 import fs from '@ohos.file.fs';
+import storageStatistics from '@ohos.file.storageStatistics';
 import { getJson } from '../common/Http';
 import { JsonObj, parseJson, getStr, getNum, getObj } from '../common/JsonReader';
 import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
-import { DownloadSpec } from './DownloadShared';
+import { DownloadSpec, sha1HexOf } from './DownloadShared';
 import { DownloadBatchResult, DownloadManagerInstance } from './DownloadManager';
 import { VersionJson, RuleSet, DEFAULT_ASSETS_BASE } from './VersionManifest';
 
@@ -44,6 +45,9 @@ export class GameInstaller {
     Logger.info(TAG, `install ${version.id}: ${specs.length} files to verify/download`);
     if (specs.length === 0) {
       return true;
+    }
+    if (!GameInstaller.hasFreeSpace(specs)) {
+      return false;
     }
     let finished: number = 0;
     const result: DownloadBatchResult = await DownloadManagerInstance.downloadAll(specs, {
@@ -121,17 +125,27 @@ export class GameInstaller {
     }
     const indexPath: string = Paths.assetIndexPath(version.assetIndexId);
     if (!fsAccess(indexPath)) {
-      const base: string = version.assetIndexUrl.length > 0
-        ? version.assetIndexUrl
-        : 'https://piston-meta.mojang.com/v1/packages/';
-      // assetIndex.url ends with '/' and the descriptor id is appended.
-      const resp = await getJson(`${base}${version.assetIndexId}.json`);
+      // Modern metadata carries the complete index URL; older cached
+      // descriptors may not, in which case the index cannot be located.
+      if (version.assetIndexUrl.length === 0) {
+        Logger.error(TAG, `asset index ${version.assetIndexId} has no URL`);
+        return '';
+      }
+      const resp = await getJson(version.assetIndexUrl);
       if (!resp.ok) {
         Logger.error(TAG, `asset index fetch failed: HTTP ${resp.code}`);
         return '';
       }
       Paths.ensureDir(Paths.indexesDir());
       Paths.writeTextFileSync(indexPath, resp.body);
+      if (version.assetIndexSha1.length > 0) {
+        const actual: string = await sha1HexOf(indexPath);
+        if (actual !== version.assetIndexSha1.toLowerCase()) {
+          fs.unlinkSync(indexPath);
+          Logger.error(TAG, `asset index sha1 mismatch: expected ${version.assetIndexSha1}`);
+          return '';
+        }
+      }
     }
 
     const root: JsonObj | null = parseJson(fsReadText(indexPath));
@@ -165,6 +179,9 @@ export class GameInstaller {
     Logger.info(TAG, `assets: ${specs.length} objects for index ${version.assetIndexId}`);
 
     if (specs.length > 0) {
+      if (!GameInstaller.hasFreeSpace(specs)) {
+        return '';
+      }
       let finished: number = 0;
       const result: DownloadBatchResult = await DownloadManagerInstance.downloadAll(specs, {
         onItemFinished: (r) => {
@@ -183,6 +200,36 @@ export class GameInstaller {
       }
     }
     return version.assetIndexId;
+  }
+
+  /**
+   * Cheap preflight so a large asset batch does not fail halfway through
+   * with ENOSPC. Uses the synchronous storage statistics API (API 15+).
+   */
+  private static hasFreeSpace(specs: Array<DownloadSpec>): boolean {
+    let needed: number = 0;
+    for (const spec of specs) {
+      if (spec.sizeBytes !== undefined && spec.sizeBytes > 0 && !fsAccess(spec.destPath)) {
+        needed += spec.sizeBytes;
+      }
+    }
+    if (needed === 0) {
+      return true;
+    }
+    const reserve: number = 256 * 1024 * 1024;
+    try {
+      const free: number = storageStatistics.getFreeSizeSync();
+      if (free < needed + reserve) {
+        Logger.error(TAG,
+          `not enough disk space: need ${Math.ceil(needed / 1048576)} MB + reserve, ` +
+          `${Math.floor(free / 1048576)} MB free`);
+        return false;
+      }
+    } catch (err) {
+      const e = err as Error;
+      Logger.warn(TAG, `free-space query failed, continuing: ${e.message}`);
+    }
+    return true;
   }
 
   /**

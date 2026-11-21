@@ -41,8 +41,12 @@ public final class InputBridge {
     private static volatile int mouseTail = 0;
 
     /** Relative mouse motion, accumulated between backend polls. */
-    private static volatile float pendingMoveX = 0f;
-    private static volatile float pendingMoveY = 0f;
+    private static final Object MOVE_LOCK = new Object();
+    private static float pendingMoveX = 0f;
+    private static float pendingMoveY = 0f;
+
+    /** Guards both ring buffers. */
+    private static final Object QUEUE_LOCK = new Object();
 
     /** Latest absolute touch state: {id, x, y, action} per slot. */
     private static final float[] TOUCH_STATE = new float[QUEUE_CAPACITY * 4];
@@ -68,16 +72,18 @@ public final class InputBridge {
     // -----------------------------------------------------------------
 
     public static void dispatchKey(int code, int action) {
-        enqueue(KEY_QUEUE, code, action);
+        enqueue(KEY_QUEUE, true, code, action);
     }
 
     public static void dispatchMouseButton(int button, int action) {
-        enqueue(MOUSE_BUTTON_QUEUE, button, action);
+        enqueue(MOUSE_BUTTON_QUEUE, false, button, action);
     }
 
     public static void dispatchMouseMove(float dx, float dy) {
-        pendingMoveX += dx;
-        pendingMoveY += dy;
+        synchronized (MOVE_LOCK) {
+            pendingMoveX += dx;
+            pendingMoveY += dy;
+        }
     }
 
     public static void dispatchTouch(int id, float x, float y, int action) {
@@ -96,20 +102,22 @@ public final class InputBridge {
 
     /** Pairs of {code, action}; returns the number of pairs consumed. */
     public static int pollKeys(int[] out) {
-        return drain(KEY_QUEUE, keyHead, keyTail, out);
+        return drain(KEY_QUEUE, true, out);
     }
 
     /** Pairs of {button, action}; returns the number of pairs consumed. */
     public static int pollMouseButtons(int[] out) {
-        return drain(MOUSE_BUTTON_QUEUE, mouseHead, mouseTail, out);
+        return drain(MOUSE_BUTTON_QUEUE, false, out);
     }
 
     /** Returns and clears accumulated relative motion. */
     public static float[] consumeMouseDelta() {
-        float[] delta = new float[] { pendingMoveX, pendingMoveY };
-        pendingMoveX = 0f;
-        pendingMoveY = 0f;
-        return delta;
+        synchronized (MOVE_LOCK) {
+            float[] delta = new float[] { pendingMoveX, pendingMoveY };
+            pendingMoveX = 0f;
+            pendingMoveY = 0f;
+            return delta;
+        }
     }
 
     /** Snapshot of the active touch slots (4 floats per pointer). */
@@ -121,40 +129,44 @@ public final class InputBridge {
 
     // -----------------------------------------------------------------
 
-    private static void enqueue(int[] queue, int a, int b) {
-        int tail = (queue == KEY_QUEUE ? keyTail : mouseTail) + 2;
-        if (tail >= queue.length) {
-            tail = 0;
-        }
-        int head = (queue == KEY_QUEUE ? keyHead : mouseHead);
-        if (tail == head) {
-            return; // full: drop oldest behavior intentionally avoided
-        }
-        queue[tail] = a;
-        queue[tail + 1] = b;
-        if (queue == KEY_QUEUE) {
-            keyTail = tail;
-        } else {
-            mouseTail = tail;
+    private static void enqueue(int[] queue, boolean keys, int a, int b) {
+        synchronized (QUEUE_LOCK) {
+            int head = keys ? keyHead : mouseHead;
+            int tail = keys ? keyTail : mouseTail;
+            int next = (tail + 2 >= queue.length) ? 0 : tail + 2;
+            if (next == head) {
+                return; // full: drop newest
+            }
+            queue[tail] = a;
+            queue[tail + 1] = b;
+            if (keys) {
+                keyTail = next;
+            } else {
+                mouseTail = next;
+            }
         }
     }
 
-    private static int drain(int[] queue, int head, int tail, int[] out) {
-        int count = 0;
-        while (head != tail && count + 2 <= out.length) {
-            out[count] = queue[head];
-            out[count + 1] = queue[head + 1];
-            count += 2;
-            head += 2;
-            if (head >= queue.length) {
-                head = 0;
+    private static int drain(int[] queue, boolean keys, int[] out) {
+        synchronized (QUEUE_LOCK) {
+            int head = keys ? keyHead : mouseHead;
+            int tail = keys ? keyTail : mouseTail;
+            int count = 0;
+            while (head != tail && count + 2 <= out.length) {
+                out[count] = queue[head];
+                out[count + 1] = queue[head + 1];
+                count += 2;
+                head += 2;
+                if (head >= queue.length) {
+                    head = 0;
+                }
             }
+            if (keys) {
+                keyHead = head;
+            } else {
+                mouseHead = head;
+            }
+            return count / 2;
         }
-        if (queue == KEY_QUEUE) {
-            keyHead = head;
-        } else {
-            mouseHead = head;
-        }
-        return count / 2;
     }
 }

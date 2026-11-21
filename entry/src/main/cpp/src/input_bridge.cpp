@@ -14,7 +14,9 @@
 #include <deque>
 #include <mutex>
 #include <atomic>
+#include <condition_variable>
 #include <functional>
+#include <thread>
 
 namespace mc4hos::input {
 
@@ -25,11 +27,51 @@ struct PendingEvent {
 };
 
 std::mutex g_mutex;
+std::condition_variable g_readyCv;
 std::deque<PendingEvent> g_queue;
 std::atomic<bool> g_jvmReady{false};
 std::atomic<int> g_dropped{0};
+std::once_flag g_dispatcherOnce;
 
 constexpr const char *kBridgeClass = "org/mc4hos/bridge/InputBridge";
+
+/**
+ * Dedicated JNI dispatcher. Attaches once, then drains queued overlay input
+ * for the lifetime of the process; events posted after the initial flush are
+ * delivered instead of sitting in the queue forever.
+ */
+void DispatcherLoop() {
+    JNIEnv *env = nullptr;
+    while (true) {
+        std::deque<PendingEvent> batch;
+        {
+            std::unique_lock<std::mutex> lock(g_mutex);
+            g_readyCv.wait(lock, [] {
+                return g_jvmReady.load() && !g_queue.empty();
+            });
+            if (!g_jvmReady.load()) {
+                continue;
+            }
+            batch.swap(g_queue);
+        }
+        if (env == nullptr) {
+            env = jni::AttachCurrentThread();
+            if (env == nullptr) {
+                mc4hos::log::Emit("[MC4HOS] input dispatcher: attach failed");
+                return;
+            }
+        }
+        for (PendingEvent &event : batch) {
+            event.invoke(env);
+        }
+    }
+}
+
+void EnsureDispatcher() {
+    std::call_once(g_dispatcherOnce, [] {
+        std::thread(DispatcherLoop).detach();
+    });
+}
 
 void Enqueue(std::function<void(JNIEnv *)> fn) {
     if (!g_jvmReady.load()) {
@@ -37,8 +79,11 @@ void Enqueue(std::function<void(JNIEnv *)> fn) {
         g_dropped.fetch_add(1);
         return;
     }
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_queue.push_back(PendingEvent{std::move(fn)});
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_queue.push_back(PendingEvent{std::move(fn)});
+    }
+    g_readyCv.notify_one();
 }
 
 } // namespace
@@ -83,6 +128,10 @@ void PostTouch(int id, float x, float y, int action) {
 
 void SetJvmReady(bool ready) {
     g_jvmReady.store(ready);
+    if (ready) {
+        EnsureDispatcher();
+    }
+    g_readyCv.notify_all();
     if (ready && g_dropped.load() > 0) {
         mc4hos::log::Emit("[MC4HOS] input bridge: dropped " +
                           std::to_string(g_dropped.load()) +

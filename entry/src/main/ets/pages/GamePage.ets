@@ -29,14 +29,17 @@ export struct GamePageView {
   @State lastLogLines: Array<string> = [];
   @Consume('nav') navStack: NavPathStack;
   private consoleListener: ((event: emitter.EventData) => void) | null = null;
+  private progressListener: ((p: LaunchProgress) => void) | null = null;
 
   aboutToAppear(): void {
     ControlLayoutStore.load().then((layout: ControlLayoutSpec) => {
       this.overlayLayout = layout;
     });
-    GameLauncher.onProgress((p: LaunchProgress) => {
+    const progressListener: (p: LaunchProgress) => void = (p: LaunchProgress) => {
       this.progress = p;
-    });
+    };
+    this.progressListener = progressListener;
+    GameLauncher.onProgress(progressListener);
     const listener: (event: emitter.EventData) => void = (event: emitter.EventData) => {
       const data: Record<string, Object> | undefined = event.data;
       if (data === undefined) {
@@ -54,6 +57,8 @@ export struct GamePageView {
     window.getLastWindow(this.getUIContext().getHostContext()).then((w: window.Window) => {
       w.setPreferredOrientation(window.Orientation.LANDSCAPE);
       w.setWindowLayoutFullScreen(true);
+      w.setWindowKeepScreenOn(true);
+      w.setWindowSystemBarEnable([]);
     });
   }
 
@@ -62,9 +67,15 @@ export struct GamePageView {
       emitter.off(CONSOLE_EVENT_NAME, this.consoleListener);
       this.consoleListener = null;
     }
+    if (this.progressListener !== null) {
+      GameLauncher.offProgress(this.progressListener);
+      this.progressListener = null;
+    }
     window.getLastWindow(this.getUIContext().getHostContext()).then((w: window.Window) => {
       w.setPreferredOrientation(window.Orientation.PORTRAIT);
       w.setWindowLayoutFullScreen(false);
+      w.setWindowKeepScreenOn(false);
+      w.setWindowSystemBarEnable(['status', 'navigation']);
     });
   }
 

@@ -89,7 +89,9 @@ export interface VersionJson {
   gameArgs: Array<ArgEntry>;
   legacyMinecraftArguments: string;
   assetIndexId: string;
+  /** Full URL of the asset index JSON (piston-meta file URL in modern metadata). */
   assetIndexUrl: string;
+  assetIndexSha1: string;
   javaMajorVersion: number;
 }
 
@@ -277,10 +279,12 @@ export class VersionManifest {
     // asset index
     let assetIndexId: string = '';
     let assetIndexUrl: string = '';
+    let assetIndexSha1: string = '';
     const assetIndexObj: JsonObj | null = getObj(root, 'assetIndex');
     if (assetIndexObj !== null) {
       assetIndexId = getStr(assetIndexObj, 'id');
       assetIndexUrl = getStr(assetIndexObj, 'url');
+      assetIndexSha1 = getStr(assetIndexObj, 'sha1');
     }
 
     // java runtime requirement
@@ -301,6 +305,7 @@ export class VersionManifest {
       legacyMinecraftArguments: getStr(root, 'minecraftArguments'),
       assetIndexId: assetIndexId,
       assetIndexUrl: assetIndexUrl,
+      assetIndexSha1: assetIndexSha1,
       javaMajorVersion: javaMajor
     };
   }

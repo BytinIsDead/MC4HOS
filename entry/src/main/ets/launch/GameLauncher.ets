@@ -8,8 +8,10 @@
  */
 
 import fs from '@ohos.file.fs';
+import display from '@ohos.display';
 import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
+import { KEY_DEMO_MODE } from '../common/AppState';
 import { AccountStore } from '../auth/AccountStore';
 import { VersionManifestInstance } from '../download/VersionManifest';
 import { GameInstaller } from '../download/GameInstaller';
@@ -63,6 +65,12 @@ export class GameLauncher {
     listener({ phase: GameLauncher.currentPhase, message: '' });
   }
 
+  /** Removes a previously registered listener (page lifecycle teardown). */
+  public static offProgress(listener: (p: LaunchProgress) => void): void {
+    GameLauncher.phaseListeners =
+      GameLauncher.phaseListeners.filter((l: (p: LaunchProgress) => void) => l !== listener);
+  }
+
   private static setPhase(phase: LaunchPhase, message: string): void {
     GameLauncher.currentPhase = phase;
     Logger.info(TAG, `[${phase}] ${message}`);
@@ -102,10 +110,15 @@ export class GameLauncher {
         'mc4hos-bridge.jar not deployed — build it per docs/NATIVES.md §3');
       return false;
     }
+    const nativeLibDirs: Array<string> =
+      JavaRuntimeManager.nativeLibraryDirs(runtime.homePath);
+    if (Paths.hapNativeLibraryDir().length > 0) {
+      nativeLibDirs.push(Paths.hapNativeLibraryDir());
+    }
     const config: NativeLaunchConfig = {
       javaHome: runtime.homePath,
       classPath: bridgeJar,
-      nativesDirs: `${runtime.homePath}/lib/server:${runtime.homePath}/lib:${Paths.hapNativeLibraryDir()}`,
+      nativesDirs: nativeLibDirs.join(':'),
       jvmOptions: ['-Xmx512M', '-Xms64M'],
       mainClass: 'org.mc4hos.bridge.SelfTest',
       gameArgs: [],
@@ -145,7 +158,7 @@ export class GameLauncher {
     // Self-test mode: boot the embedded JVM with the bundled bridge jar and
     // run org.mc4hos.bridge.SelfTest — no Mojang services, no account, no
     // downloads. Then queue the EGL surface self-test for the game view.
-    if (AppStorage.get<boolean>('selfTestMode') ?? false) {
+    if (AppStorage.get<boolean>(KEY_DEMO_MODE) ?? false) {
       return await GameLauncher.launchJvmSelfTest();
     }
     try {
@@ -202,6 +215,18 @@ export class GameLauncher {
       GameLauncher.setPhase('building_args', 'Building JVM arguments');
       const ramMb: number = AppStorage.get<number>('ramMb') ?? 2048;
       const scale: number = AppStorage.get<number>('resolutionScale') ?? 100;
+      let baseWidth: number = 1280;
+      let baseHeight: number = 720;
+      try {
+        const screen = display.getDefaultDisplaySync();
+        if (screen.width > 0 && screen.height > 0) {
+          baseWidth = screen.width;
+          baseHeight = screen.height;
+        }
+      } catch (err) {
+        const e = err as Error;
+        Logger.warn(TAG, `display size unavailable, using 1280x720: ${e.message}`);
+      }
       const ctx: LaunchContext = {
         version: version,
         gameDir: Paths.gameDir(),
@@ -210,8 +235,8 @@ export class GameLauncher {
         mcAccessToken: mcToken,
         xuid: xuid,
         ramMb: ramMb,
-        resolutionWidth: Math.floor(1280 * scale / 100),
-        resolutionHeight: Math.floor(720 * scale / 100),
+        resolutionWidth: Math.floor(baseWidth * scale / 100),
+        resolutionHeight: Math.floor(baseHeight * scale / 100),
         nativesDir: Paths.nativesVersionDir(version.id),
         javaHome: runtime.homePath,
         extraJvmArgs: [],

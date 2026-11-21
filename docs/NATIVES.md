@@ -26,47 +26,85 @@ launcher expects. All builds happen **outside** this repository.
 
 ## 1. Embedded OpenJDK (libjvm.so + JRE image)
 
-Targets: **OpenJDK 8, 17 and 21** images for both `aarch64-linux-ohos` and
-`x86_64-linux-ohos`.
+Targets: **OpenJDK 8, 17, 21 and 25** images for `aarch64-linux-ohos`; the
+separate x86_64 tree builds **21 and 25** for `x86_64-linux-ohos`. Java 25 is
+required by current Minecraft releases (26.x); 1.20.5–1.21.x need 21 and
+1.12.2 needs 8. The launcher selects an exact or newer major, never an older
+one, so Java 21 also covers 1.17–1.20.4.
 
-1. Start from upstream OpenJDK sources (no forks required for the JRE image
-   itself).
-2. Configure cross-build with the OHOS clang and sysroot, once per target:
-   `--openjdk-target=aarch64-linux-ohos --with-sysroot=$OHOS_NDK/sysroot`
-   and `--openjdk-target=x86_64-linux-ohos …` respectively, plus the usual
-   `--with-jvm-variants=server`. The x86_64 pass typically needs no source
-   patches at all beyond the musl notes below.
-3. Port notes (kept minimal, upstreamable):
-   - `os_linux.cpp`/`os_posix` family: OpenHarmony is Linux-kernel
-     compatible for what the JVM touches (mmap, pthreads, epoll); the main
-     deltas are musl stack-guard behavior and `dlvsym` absence — identical
-     for both targets.
-   - JVM_dynamic/foreign: not needed for Minecraft workloads.
-4. Result layout consumed by `JavaRuntimeManager` (per ABI — the manager
-   picks the pack whose name/ABI matches `Paths.deviceAbi()`):
+### aarch64 (prebuilt, pinned)
+
+The built-in catalog in
+`entry/src/main/ets/download/JavaRuntimeManager.ets` points at public
+community OpenHarmony builds of JDK 8/17/21/25. Every entry pins the archive
+size and SHA-256; downloads are rejected on any mismatch.
+
+### x86_64 (built in this repository's CI)
+
+There is no public x86_64 OHOS JRE. The separate tree in `openharmony-jdk/`
+cross-compiles the same pinned upstream JDK sources and OHOS patch series for
+`x86_64-linux-ohos`. `.github/workflows/jdk-x86_64.yml` builds
+`jre21-ohos-x86_64.zip` and `jre25-ohos-x86_64.zip`, uploads artifacts, and —
+when run with `publish = true` — publishes them plus `runtime-catalog.json`
+to the `jdk-x86_64-v1` release. The launcher fetches that catalog to obtain
+the per-build SHA-256 before downloading. See `openharmony-jdk/README.md`
+for the local build command and licensing requirements.
+
+Key configure details (both ABIs, OpenJDK 21/25 scheme):
+
+- Cross-compile with the OHOS NDK clang, but keep autoconf's target OS as
+  Linux/musl: `--openjdk-target=x86_64-unknown-linux-musl` (or
+  `aarch64-unknown-linux-musl`) while `CC` is the OHOS
+  `x86_64-linux-ohos-clang` wrapper. Do **not** pass
+  `--openjdk-target=x86_64-linux-ohos`; OpenJDK parses `ohos` as the target
+  OS and the build system fails.
+- Add `--with-jvm-variants=server --enable-headless-only`, the OHOS sysroot
+  and libc++ paths, and the community musl/OHOS patch series (dlvsym/dlinfo,
+  utmpx, IPv6 sandbox fallback, child-process and JavaSound fixes).
+- The produced image must be packaged with `libc++_shared.so` and the thin
+  `libcxxabi_shim.so` facade, plus upstream `LICENSE`,
+  `ADDITIONAL_LICENSE_INFO`, `ASSEMBLY_EXCEPTION`, and the OHOS SDK
+  `NOTICE.txt`.
+
+### Layout consumed by the launcher
 
 ```
-jvm/jre17-ohos-x86_64/
-├── bin/                 # java, keytool (optional)
+jvm/jre21-ohos-x86_64/          # modern layout
+├── bin/
 ├── lib/
-│   ├── rt modules (modules image or exploded classes)
-│   └── server/libjvm.so # ← dlopen()ed by libmc4hos_core.so
+│   └── server/libjvm.so        # ← dlopen()ed by libmc4hos_core.so
 ├── release
-└── runtime.json         # {"name":"jre17-ohos-x86_64","javaMajor":17,"abi":"x86_64","homePath":"<abs>"}
+└── runtime.json                # {"name":…,"javaMajor":21,"abi":"x86_64","homePath":"<abs JRE root>"}
+
+jvm/jre8-ohos-aarch64/           # JDK8 layout
+└── jre/
+    ├── bin/
+    └── lib/aarch64/server/libjvm.so
 ```
 
-Zip the whole directory (archive root = `bin/…`/`lib/…`) as a **runtime
-pack** and point `RUNTIME_CATALOG` in
-`ets/download/JavaRuntimeManager.ets` at its URL; the manager downloads,
-extracts and stamps `runtime.json` automatically.
+The manager recursively locates the JRE root (checking `lib/server`,
+`lib/<arch>/server`, and nested `jre/`), stores that normalized path in
+`runtime.json`, and builds `java.library.path` from the directories that
+actually exist. `jvm_loader.cpp` tries the same layouts before `dlopen`.
+Packs must therefore keep a standard JDK image tree; no custom relocation is
+required.
+
+Zip either image with the archive root at `bin/`/`lib/` (modern) or
+`jre/` (JDK8) as a **runtime pack**. Catalog entries carry `sha256` and
+`sizeBytes`; `JavaRuntimeManager` rejects ABI mismatches, size/checksum
+mismatches, and packs without a discoverable `libjvm.so`. Packs can also be
+imported from `/data/local/tmp` (Settings → Deployment) when a release is not
+available.
 
 ## 2. Game native stack (`java.library.path`)
 
 Minecraft loads natives by name (`System.loadLibrary("lwjgl")`,
 `"openal"`). The launcher passes
-`<files>/mc4hos/natives/<mcVersion>/<abi>:<javaHome>/lib/server:…` as
-`-Djava.library.path`, where `<abi>` is `arm64-v8a` or `x86_64` (resolved
-from `Paths.deviceAbi()`). Build and deploy per ABI:
+`<files>/mc4hos/natives/<mcVersion>/<abi>:<javaHome>/lib/server:<javaHome>/lib:…`
+as `-Djava.library.path`, where `<abi>` is `arm64-v8a` or `x86_64` (resolved
+from `Paths.deviceAbi()`), and the JDK directories are selected from the
+runtime's actual layout (`lib/server`, `lib/<arch>/server`, …). Build and
+deploy per ABI:
 
 | Library | Source | Notes |
 |---|---|---|
@@ -120,8 +158,8 @@ automatically when the file exists.
 
 | Artifact | Path in sandbox | Consumed by |
 |---|---|---|
-| libjvm.so | `jvm/<name>/lib/server/libjvm.so` (name encodes ABI) | `jvm_loader.cpp` (dlopen) |
-| runtime.json | `jvm/<name>/runtime.json` | `JavaRuntimeManager.listInstalled()` |
+| libjvm.so | `jvm/<name>/lib/server/libjvm.so` or `jvm/<name>/jre/lib/<arch>/server/libjvm.so` | `jvm_loader.cpp` (dlopen) |
+| runtime.json | `jvm/<name>/runtime.json` (homePath = normalized JRE root) | `JavaRuntimeManager.listInstalled()` |
 | mc4hos-bridge.jar | `bridge/mc4hos-bridge.jar` (ABI-independent bytecode) | classpath head |
 | liblwjgl*.so / libopenal.so | `natives/<mcVersion>/<abi>/` | `java.library.path` |
 | latest.log | `logs/latest.log` | Console tab + `hdc hilog` |

@@ -22,7 +22,7 @@ sources by *you* (see [NATIVES.md](NATIVES.md)).
 | HarmonyOS SDK | API **24** (`compatibleSdkVersion: "6.1.1(24)"`) | Enable **Native SDK** (C++ toolchain) in SDK manager |
 | Device / emulator | HarmonyOS 6.1.1, **arm64-v8a or x86_64** | Real device recommended (JVM + GPU required). The OHOS NDK has no 32-bit x86 ABI; the emulator and Intel 2-in-1s run `x86_64` |
 | hdc | from SDK | `hdc install`, `hdc file send`, logs via `hdc hilog` |
-| (runtime) OpenJDK OHOS builds | 8 / 17 / 21 × {arm64-v8a, x86_64} | produced per [NATIVES.md](NATIVES.md) |
+| (runtime) OpenJDK OHOS builds | aarch64: 8 / 17 / 21 / 25; x86_64: 21 / 25 | aarch64 packs are downloaded from pinned public builds; x86_64 packs are built by [openharmony-jdk](../openharmony-jdk/README.md) · see [NATIVES.md](NATIVES.md); latest Minecraft releases require Java 25 |
 | (runtime) LWJGL / OpenAL-Soft OHOS builds | 3.3.x × both ABIs | produced per [NATIVES.md](NATIVES.md) |
 
 ## 2. Open and configure the project
@@ -106,8 +106,11 @@ hdc hilog | grep -E "MC4HOS|Game"
    Accounts tab (device-code flow).
 4. **Versions tab** — install a release (client jar + libraries + assets).
 5. **Runtime** — install an OpenHarmony JRE pack (§6), confirm
-   `jvm/jre17-ohos-<abi>/runtime.json` exists (the launcher logs the device
-   ABI at startup: `device ABI: arm64-v8a` / `x86_64`).
+   `jvm/jre<major>-ohos-<abi>/runtime.json` exists (the launcher logs the
+   device ABI at startup: `device ABI: arm64-v8a` / `x86_64`). Use the
+   major required by the version JSON (`javaVersion.majorVersion`); current
+   releases require **25**, 1.20.5–1.21.x require **21**, and 1.12.2
+   requires **8**. Selection never falls back to an older major.
 6. **Natives** — deploy `liblwjgl.so` etc. into
    `files/mc4hos/natives/<mcVersion>/<abi>/` (§6), plus
    `bridge/mc4hos-bridge.jar`.
@@ -153,6 +156,18 @@ The launcher selects runtime packs and natives by `Paths.deviceAbi()`, so a
 sandbox may hold both architectures side by side
 (`natives/1.20.4/arm64-v8a/` and `natives/1.20.4/x86_64/`).
 
+Packs installed by `JavaRuntimeManager.install()` must match the device ABI,
+carry a pinned SHA-256 and size in the catalog, and contain a discoverable
+`libjvm.so` (`lib/server/` for modern JDKs, `lib/<arch>/server/` for JDK8);
+otherwise installation is rejected. Imported packs (Settings → Deployment)
+are parsed from their `jre<major>-ohos-<abi>.zip` (or `jdk…`) name and use
+the same layout discovery.
+
+For **x86_64**, build the pack with `openharmony-jdk/scripts/build_x86_64.sh`
+(or download the CI artifact from the `jdk-x86_64-v1` release) and import
+`jre21-ohos-x86_64.zip` / `jre25-ohos-x86_64.zip` exactly as above. No
+aarch64 runtime can run on x86_64 — the JVM is loaded in-process.
+
 Sandbox paths for debug builds can also be browsed via DevEco
 `Device File Browser`.
 
@@ -189,10 +204,18 @@ The requested scope is fixed to `XboxLive.signin offline_access` in
 | `Failed to get a resolved OhmUrl for "...index.d.ts"` at CompileArkTS | so-type-package resolution is bypassed entirely: the import types are declared ambiently in `entry/src/main/ets/native/Mc4hosCoreNative.d.ts` (declare module 'mc4hos_core.so'), and entry/oh-package.json5 carries no file: dependency for it. Known contributing factors (entry-level `ohpm install`, `useNormalizedOHMUrl`, lock drift) are documented in the git history |
 | `Concurrent function should only use import variable or local variable` | taskpool `@Concurrent` functions may only reference imports/locals — shared helpers must live in an imported module (`DownloadShared.ets`) |
 | `Failed to get a resolved OhmUrl for "hvigor_ignore_..."` on `.so` imports | the native module name must match `/^lib\S+\.so/` — rename to `lib<name>.so` (types dir, oh-package name, entry dependency, all ArkTS imports). Root cause found by reading `tsc-resolve.js` in hvigor-arkts-compose |
+| `JNI_CreateJavaVM failed (code …)` | JVM built for wrong **ABI** or libc — pack must match `Paths.deviceAbi()` (logged at startup) and be a musl/ohos build |
+| Surface stays black, self-test on | EGL config mismatch — try removing alpha bits in `game_surface.cpp` |
+| Overlay input ignored | game not running (events before VM start are dropped; check `[MC4HOS] input bridge` line) |
+| Downloads stall | `ohos.permission.INTERNET` must be granted (module.json5 already declares it); check `hdc hilog` for HTTP codes |
+| `compatibleSdkVersion` error at build | SDK string mismatch — copy the exact string from SDK manager |
+| x86_64 emulator crash at JVM load | runtime pack or natives deployed from the ARM tree — both paths are ABI-qualified, see §6 |
+| "not enough disk space" in console | asset batch preflight refused; free space or reduce the installed version set |
+| `Task timed out` in download log | API 24 taskpool timeout hit — check network/proxy; the worker retries twice before failing |
 
 ### Local native verification (no device needed)
 
-The six C++ sources can be compiled+linked without DevEco's GUI, mirroring
+The C++ sources can be compiled+linked without DevEco's GUI, mirroring
 ninja's flags (useful to iterate on native errors fast):
 
 ```bash
@@ -202,12 +225,6 @@ SDK="C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native"
   -I"C:/Program Files/Huawei/DevEco Studio/sdk/default/hms/native/sysroot/usr/include" \
   -Ientry/src/main/cpp/include -c entry/src/main/cpp/napi_init.cpp -o /tmp/t.o
 ```
-| `JNI_CreateJavaVM failed (code …)` | JVM built for wrong **ABI** or libc — pack must match `Paths.deviceAbi()` (logged at startup) and be a musl/ohos build |
-| Surface stays black, self-test on | EGL config mismatch — try removing alpha bits in `game_surface.cpp` |
-| Overlay input ignored | game not running (events before VM start are dropped; check `[MC4HOS] input bridge` line) |
-| Downloads stall | `ohos.permission.INTERNET` must be granted (module.json5 already declares it); check `hdc hilog` for HTTP codes |
-| `compatibleSdkVersion` error at build | SDK string mismatch — copy the exact string from SDK manager |
-| x86_64 emulator crash at JVM load | runtime pack or natives deployed from the ARM tree — both paths are ABI-qualified, see §6 |
 
 ## 9. Compliance checklist for distribution
 
@@ -262,6 +279,14 @@ secrets and no repository variables required**:
    `HOS_TOOLS_URL` can pin a different toolchain (tried first) — never a
    secret.
 
+**x86_64 Java runtime (`jdk-x86_64.yml`)** is a separate workflow that uses
+the same toolchain zip but builds the JDKs in `openharmony-jdk/`, not the
+HAP. Run it manually with `publish = true` (or push a `jdk-x86_64-v*` tag)
+to create the release that the launcher's x86_64 catalog points at. Build
+inputs are pinned by SHA-256 in `openharmony-jdk/build-inputs.lock.json`;
+the workflow uploads artifacts on every run and publishes only when asked.
+See `openharmony-jdk/README.md` for the GPLv2+CE source-offer obligations.
+
 The produced HAP is **unsigned** (debug signing certificates are
 account-bound); signing stays a local manual step (§2). For local builds
 without GitHub, `scripts/build_hap.bat` / `scripts/build_hap.sh` drive the
@@ -269,3 +294,49 @@ locally installed DevEco Studio the same way.
 
 When a newer commandline-tools release lands on the mirror, bump the two
 URLs in `ci.yml` (one-line change) and the cache key.
+
+## 11. HarmonyOS 6.1.1 (API 24) capability notes
+
+Verified against the local SDK (`sdk/default/openharmony/ets/oh-uni-package.json`:
+`apiVersion: "24"`, `version: "6.1.1.125"`, Release) and a local
+`assembleHap` build with DevEco Studio 6.1.1.
+
+| API (since 24 unless noted) | Where used |
+|---|---|
+| `taskpool.Configs` + `execute(task, configs)` (priority, timeout) | `download/DownloadManager.ets` — bulk downloads carry an explicit priority and a 10-minute per-file timeout; timed-out workers are retried |
+| `hidebug.getRssInfo()` | Settings → Diagnostics (process RSS + swap, KB→MB) |
+| `util.ArkTSVM.getAllVMHeapMemoryInfo()` | Settings → Diagnostics (heap object totals) |
+| `util.ArkTSVM.onVMHeapMemoryPressure()` | `entryability/EntryAbility.ets` (logs local/shared/process pressure) |
+| `storageStatistics.getFreeSizeSync()` (15) / `getFreeInodes()` (24) | disk preflight in `GameInstaller` and Diagnostics |
+| DevEco 6.1.1 Hot Reload (C++ + resources) | faster iteration on `entry/src/main/cpp` |
+
+Protocol/correctness fixes that matter on this toolchain:
+
+- Modern version JSON references `${classpath}` and `${natives_directory}`;
+  both are now substituted by `JvmArgumentBuilder`. The native loader drops
+  the version's `-cp`/`-classpath` pair and its own
+  `-Djava.library.path`/`-Djava.class.path` duplicates so the launcher stays
+  the single owner of those values. Unknown JVM options are tolerated
+  (`ignoreUnrecognized = JNI_TRUE`) because descriptors may target a newer
+  JDK than the installed runtime.
+- The asset index is fetched from its full `assetIndex.url` (a
+  `piston-meta/v1/packages/<sha1>/<id>.json` file URL) and verified against
+  `assetIndex.sha1`; the previous code appended the id to that full URL.
+- Overlay input is dispatched continuously by a dedicated JNI thread (not
+  only once at startup), and the Java ring buffer writes at the head/tail
+  pair boundary.
+- Surface geometry is queried before the self-test renderer starts, and
+  every create/resize notifies `PlatformBridge.onGameSurfaceChanged`.
+- `latest.log` is opened when the launch config supplies the log directory;
+  the early `initialize()` call no longer prevents it.
+
+Java runtime requirements (from live Mojang metadata): the current release
+(26.x) requires **Java 25**, 1.20.5–1.21.x require **Java 21**, and 1.12.2
+requires **Java 8**. The runtime catalog covers aarch64 Java 8/17/21/25 and
+x86_64 Java 21/25, filters by device ABI, verifies the pack size and
+SHA-256, discovers the JDK8 or modern `libjvm.so` layout, and never selects
+an older major than the game requires.
+
+Limitation: the JVM is linked in-process, so `System.exit` (used by "Leave
+game") terminates the app process. A restartable/background game session
+needs a separate process (`Ability`/service) hosting the JVM.

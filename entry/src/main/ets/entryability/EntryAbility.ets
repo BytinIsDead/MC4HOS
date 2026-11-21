@@ -13,6 +13,8 @@ import Want from '@ohos.app.ability.Want';
 import window from '@ohos.window';
 import preferences from '@ohos.data.preferences';
 import hilog from '@ohos.hilog';
+import util from '@ohos.util';
+import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
 import { initAppState } from '../common/AppState';
 import { AccountStore } from '../auth/AccountStore';
@@ -36,7 +38,28 @@ export default class EntryAbility extends UIAbility {
     Paths.initHapNativeLibraryDir();
     initAppState();
     GameLauncher.bindNative();
+    this.initHeapPressureWatch();
     this.initStores();
+  }
+
+  /**
+   * API 24 ArkTS-VM heap pressure callbacks. Logged so the Console tab shows
+   * memory pressure before an OOM kill occurs.
+   */
+  private initHeapPressureWatch(): void {
+    try {
+      const registered: boolean = util.ArkTSVM.onVMHeapMemoryPressure(
+        (kind: string) => {
+          Logger.warn('Memory', `ArkTS heap pressure: ${kind}`);
+        },
+        { localHeapThreshold: 85, sharedHeapThreshold: 85, processHeapThreshold: 90 });
+      if (!registered) {
+        Logger.warn('Memory', 'heap pressure callback was not registered');
+      }
+    } catch (err) {
+      const e = err as Error;
+      Logger.warn('Memory', `heap pressure watch unavailable: ${e.message}`);
+    }
   }
 
   private async initStores(): Promise<void> {

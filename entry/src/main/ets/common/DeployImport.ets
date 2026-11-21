@@ -10,7 +10,7 @@
 import fs from '@ohos.file.fs';
 import zlib from '@ohos.zlib';
 import { Paths } from './Paths';
-import { RuntimeDescriptor } from '../download/JavaRuntimeManager';
+import { RuntimeDescriptor, JavaRuntimeManager } from '../download/JavaRuntimeManager';
 
 /**
  * In-app deployment importer.
@@ -63,19 +63,21 @@ export class DeployImport {
   }
 
   /**
-   * Imports a runtime pack zip named like `jre17-ohos-x86_64.zip` (the
-   * name encodes the Java major version and the ABI). Extracts to
-   * jvm/<base>/ and writes the runtime.json marker.
+   * Imports a runtime pack zip named like `jre21-ohos-x86_64.zip` (the
+   * name encodes the Java major version and the ABI). Modern packs root at
+   * `lib/server/`; JDK8 packs root at `jre/lib/<arch>/server/`. Extracts to
+   * jvm/<base>/ and writes the runtime.json marker with the normalized JRE
+   * root.
    */
   public static async importRuntimePack(zipName: string): Promise<string> {
     if (!zipName.endsWith('.zip')) {
-      return 'Runtime pack must be a .zip, e.g. jre17-ohos-x86_64.zip';
+      return 'Runtime pack must be a .zip, e.g. jre21-ohos-x86_64.zip';
     }
     const base: string = zipName.substring(0, zipName.length - 4);
-    const majorMatch: RegExpExecArray | null = /jre(\d+)/.exec(base);
+    const majorMatch: RegExpExecArray | null = /(?:jre|jdk)(\d+)/.exec(base);
     const abiMatch: RegExpExecArray | null = /ohos-(\S+)$/.exec(base);
     if (majorMatch === null) {
-      return 'Zip name must encode the Java version, e.g. jre17-ohos-x86_64.zip';
+      return 'Zip name must encode the Java version, e.g. jre21-ohos-x86_64.zip';
     }
     try {
       const destZip: string = `${Paths.jvmDir()}/${zipName}`;
@@ -84,12 +86,17 @@ export class DeployImport {
       const destDir: string = Paths.jvmRuntimeDir(base);
       Paths.ensureDir(destDir);
       await zlib.decompressFile(destZip, destDir);
+      const homePath: string = JavaRuntimeManager.findJvmHome(destDir);
+      if (homePath.length === 0) {
+        fs.unlinkSync(destZip);
+        return `Runtime pack ${base} contains no discoverable libjvm.so`;
+      }
       const abi: string = abiMatch !== null ? abiMatch[1] : Paths.deviceAbi();
       const descriptor: RuntimeDescriptor = {
         name: base,
         javaMajor: Number(majorMatch[1]),
         abi: abi,
-        homePath: destDir
+        homePath: homePath
       };
       Paths.writeTextFileSync(`${destDir}/runtime.json`, JSON.stringify(descriptor));
       fs.unlinkSync(destZip);

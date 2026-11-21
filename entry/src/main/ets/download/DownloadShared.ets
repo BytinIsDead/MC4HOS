@@ -75,8 +75,8 @@ export function specLabel(spec: DownloadSpec): string {
   return idx >= 0 ? spec.url.substring(idx + 1) : spec.url;
 }
 
-export async function sha1HexOf(path: string): Promise<string> {
-  const md: cryptoFramework.Md = cryptoFramework.createMd('SHA1');
+async function digestHexOf(path: string, algorithm: string): Promise<string> {
+  const md: cryptoFramework.Md = cryptoFramework.createMd(algorithm);
   const stat: fs.Stat = fs.statSync(path);
   const buf: ArrayBuffer = new ArrayBuffer(1024 * 512);
   const fd: number = fs.openSync(path, fs.OpenMode.READ_ONLY).fd;
@@ -96,6 +96,14 @@ export async function sha1HexOf(path: string): Promise<string> {
     hex += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
   }
   return hex;
+}
+
+export async function sha1HexOf(path: string): Promise<string> {
+  return digestHexOf(path, 'SHA1');
+}
+
+export async function sha256HexOf(path: string): Promise<string> {
+  return digestHexOf(path, 'SHA256');
 }
 
 /** Verify (or, when no checksum is known, pass through) a downloaded file. */

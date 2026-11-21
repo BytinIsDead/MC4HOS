@@ -24,6 +24,12 @@ export const DEFAULT_CONCURRENCY: number = 6;
 
 export interface DownloadBatchOptions {
   concurrency?: number;
+  /** taskpool priority for bulk asset downloads. */
+  priority?: taskpool.Priority;
+  /** Hard per-file timeout enforced by the API 24 taskpool config. */
+  timeoutMs?: number;
+  /** Total attempts per file (initial try included). */
+  maxAttempts?: number;
   onItemFinished?: (result: DownloadResult) => void;
 }
 
@@ -32,14 +38,32 @@ export interface DownloadBatchResult {
   failed: Array<DownloadResult>;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise<void>((resolve: () => void) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function retryable(result: DownloadResult): boolean {
+  if (result.ok) {
+    return false;
+  }
+  if (result.httpCode === -1 || result.httpCode === 429 || result.httpCode >= 500) {
+    return true;
+  }
+  // Size/checksum mismatches are usually truncated transfers worth retrying.
+  const error: string = result.error ?? '';
+  return error.indexOf('mismatch') >= 0 || error.indexOf('stalled') >= 0;
+}
+
 export class DownloadManager {
 
-  /** Subscribe once (e.g. from a page) to per-item progress events. */
+  /** Subscribes to per-item progress events; returns an unsubscribe function. */
   public static subscribeProgress(
     callback: (label: string, received: number, total: number, finished: boolean, failed: boolean) => void
-  ): void {
+  ): () => void {
     const progressEvent: emitter.InnerEvent = { eventId: DL_PROGRESS_EVENT_ID };
-    emitter.on(progressEvent, (event: emitter.EventData) => {
+    const handler: (event: emitter.EventData) => void = (event: emitter.EventData) => {
       const data: Record<string, Object> | undefined = event.data;
       if (data === undefined) {
         return;
@@ -51,7 +75,11 @@ export class DownloadManager {
         data['finished'] as boolean,
         data['failed'] as boolean
       );
-    });
+    };
+    emitter.on(progressEvent, handler);
+    return () => {
+      emitter.off(DL_PROGRESS_EVENT_ID, handler);
+    };
   }
 
   /**
@@ -61,6 +89,11 @@ export class DownloadManager {
   public async downloadAll(specs: Array<DownloadSpec>,
     options: DownloadBatchOptions = {}): Promise<DownloadBatchResult> {
     const concurrency: number = options.concurrency ?? DEFAULT_CONCURRENCY;
+    const maxAttempts: number = Math.max(1, options.maxAttempts ?? 3);
+    const configs: taskpool.Configs = {
+      priority: options.priority ?? taskpool.Priority.MEDIUM,
+      timeout: options.timeoutMs ?? 600000
+    };
     const succeeded: Array<DownloadResult> = [];
     const failed: Array<DownloadResult> = [];
     Logger.info(TAG, `downloading ${specs.length} files, concurrency ${concurrency}`);
@@ -74,25 +107,31 @@ export class DownloadManager {
           if (spec === undefined) {
             break;
           }
-          try {
-            const task: taskpool.Task = new taskpool.Task(downloadOne, spec);
-            const result = await taskpool.execute(task) as DownloadResult;
-            if (result.ok) {
-              succeeded.push(result);
-            } else {
-              failed.push(result);
-              Logger.warn(TAG, `failed ${spec.destPath}: ${result.error ?? 'unknown'}`);
+          let result: DownloadResult = { spec: spec, ok: false, httpCode: -1 };
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+              const task: taskpool.Task = new taskpool.Task(downloadOne, spec);
+              result = await taskpool.execute(task, configs) as DownloadResult;
+            } catch (err) {
+              const e = err as Error;
+              result = { spec: spec, ok: false, httpCode: -1, error: e.message };
             }
-            if (options.onItemFinished !== undefined) {
-              options.onItemFinished(result);
+            if (result.ok || !retryable(result) || attempt === maxAttempts) {
+              break;
             }
-          } catch (err) {
-            const e = err as Error;
-            const bad: DownloadResult = { spec: spec, ok: false, httpCode: -1, error: e.message };
-            failed.push(bad);
-            if (options.onItemFinished !== undefined) {
-              options.onItemFinished(bad);
-            }
+            Logger.warn(TAG,
+              `${spec.destPath} attempt ${attempt}/${maxAttempts} failed ` +
+              `(${result.error ?? result.httpCode}); retrying`);
+            await delay(1000 * attempt);
+          }
+          if (result.ok) {
+            succeeded.push(result);
+          } else {
+            failed.push(result);
+            Logger.warn(TAG, `failed ${spec.destPath}: ${result.error ?? 'unknown'}`);
+          }
+          if (options.onItemFinished !== undefined) {
+            options.onItemFinished(result);
           }
         }
       })());

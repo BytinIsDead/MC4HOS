@@ -28,20 +28,29 @@ export struct VersionsPage {
   @State statusText: string = '';
   @State busy: boolean = false;
   @State progressText: string = '';
+  private unsubscribeProgress: (() => void) | null = null;
 
   aboutToAppear(): void {
     VersionManifestInstance.load().then((entries: Array<VersionEntry>) => {
       this.entries = entries;
     });
-    DownloadManager.subscribeProgress((label: string, received: number, total: number,
+    this.unsubscribeProgress = DownloadManager.subscribeProgress(
+      (label: string, received: number, total: number,
       finished: boolean, failed: boolean) => {
-      if (finished) {
-        return;
-      }
-      const mb: number = Math.round(received / 1048576 * 10) / 10;
-      const totalMb: number = total > 0 ? Math.round(total / 1048576 * 10) / 10 : 0;
-      this.progressText = totalMb > 0 ? `${label} — ${mb} / ${totalMb} MB` : `${label} — ${mb} MB`;
-    });
+        if (finished) {
+          return;
+        }
+        const mb: number = Math.round(received / 1048576 * 10) / 10;
+        const totalMb: number = total > 0 ? Math.round(total / 1048576 * 10) / 10 : 0;
+        this.progressText = totalMb > 0 ? `${label} — ${mb} / ${totalMb} MB` : `${label} — ${mb} MB`;
+      });
+  }
+
+  aboutToDisappear(): void {
+    if (this.unsubscribeProgress !== null) {
+      this.unsubscribeProgress();
+      this.unsubscribeProgress = null;
+    }
   }
 
   private isInstalled(id: string): boolean {

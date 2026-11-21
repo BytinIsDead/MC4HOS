@@ -12,11 +12,14 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 A native, clean-room launcher that runs **Minecraft: Java Edition**
 (vanilla protocol, 1.12.2 → modern releases) on **HarmonyOS 6.1.1
 (API 24)** devices — phones, foldables and tablets — by embedding an
-ARM64 OpenJDK runtime through the HarmonyOS NDK and rendering through
+OpenJDK runtime through the HarmonyOS NDK and rendering through
 XComponent surfaces. Both 64-bit ABIs are supported: **arm64-v8a**
 (phones/tablets) and **x86_64** (Intel 2-in-1s and the OpenHarmony
 emulator); the OHOS NDK has no 32-bit x86 ABI and the JVM needs 64-bit
-anyway.
+anyway. aarch64 runtimes use pinned public OHOS OpenJDK builds; the
+x86_64 runtime is cross-compiled by the separate tree in
+[`openharmony-jdk/`](openharmony-jdk/README.md) and its GitHub Actions
+workflow.
 
 **License: MPL-2.0** (see [LICENSE](LICENSE)). Every source file carries the
 standard Exhibit-A notice. This project contains no third-party proprietary
@@ -46,7 +49,8 @@ trademark and third-party component obligations.
 └───────────────────────────────────┬───────────────────────────────────────────┘
                                     │ JNI (in-process)
 ┌───────────────────────────────────▼───────────────────────────────────────────┐
-│  Embedded OpenHarmony OpenJDK (aarch64) — built separately (docs/NATIVES.md)  │
+│  Embedded OpenHarmony OpenJDK (aarch64 / x86_64) — aarch64 packs are       │
+│  downloaded, x86_64 packs are built in openharmony-jdk/ (docs/NATIVES.md)  │
 │  + mc4hos-bridge.jar (org.mc4hos.bridge.*) + OpenHarmony-built LWJGL/OpenAL   │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -56,7 +60,7 @@ trademark and third-party component obligations.
 | Module | Status |
 |---|---|
 | Version manifest fetch/cache, per-version JSON model, rule engine | ✅ implemented |
-| Threaded downloads (taskpool pool, streaming, SHA-1, idempotent) | ✅ implemented |
+| Threaded downloads (taskpool, streaming, SHA-1, retries, idempotent) | ✅ implemented |
 | Client jar + library + asset-index + asset objects installer | ✅ implemented |
 | JVM argument builder (modern `arguments.*` + legacy `minecraftArguments`) | ✅ implemented |
 | Microsoft device-code OAuth → XBL/XSTS → Minecraft token chain | ✅ implemented |
@@ -65,8 +69,9 @@ trademark and third-party component obligations.
 | NAPI bridge, JVM loader, JNI main-class invocation, log capture | ✅ implemented |
 | XComponent surface lifecycle + EGL/GLES3 self-test renderer | ✅ implemented |
 | Dual-ABI build (arm64-v8a + x86_64), per-ABI runtime packs & natives | ✅ implemented |
-| OpenHarmony OpenJDK / LWJGL / OpenAL binaries | 🔶 pipeline documented in [docs/NATIVES.md](docs/NATIVES.md); build them from upstream sources |
-| GLFW window/input shim for LWJGL | 🔶 seam defined (InputBridge + PlatformBridge contracts) |
+| aarch64 OpenHarmony OpenJDK 8/17/21/25 runtime downloads | ✅ pinned public builds + SHA-256 |
+| x86_64 OpenHarmony OpenJDK 21/25 runtime build | ✅ separate `openharmony-jdk/` tree + CI workflow |
+| LWJGL / OpenAL / GLFW-shim binaries | 🔶 pipeline documented in [docs/NATIVES.md](docs/NATIVES.md); build them from upstream sources |
 | Desktop-GL translation (gl4es-class) | 🔶 optional component, MIT-licensed upstream |
 
 The seams are deliberate compliance boundaries: binaries of
@@ -77,6 +82,9 @@ pristine sources.
 
 ```
 AppScope/                    app-level config (bundleName, icon, label)
+openharmony-jdk/             separate x86_64 OpenJDK cross-build tree (21/25)
+.github/workflows/ci.yml     unsigned HAP build
+.github/workflows/jdk-x86_64.yml  x86_64 runtime build/release
 docs/BUILD.md                step-by-step build + integration (API 24)
 docs/NATIVES.md              runtime/native production pipeline
 entry/src/main/
@@ -119,6 +127,12 @@ Full walkthrough incl. self-test mode, account setup, runtime deployment:
   public, login-free community mirror pinned to an immutable revision, runs
   `ohpm install` + `hvigorw assembleHap`, and uploads the unsigned HAP as an
   artifact. Details: docs/BUILD.md §10.
+- **x86_64 Java runtime** is built by `.github/workflows/jdk-x86_64.yml`
+  from the separate `openharmony-jdk/` tree. Manual dispatch with
+  `publish = true` publishes `jre21/25-ohos-x86_64.zip` plus a checksummed
+  catalog to the `jdk-x86_64-v1` release; without publishing, the zips are
+  ordinary workflow artifacts for `hdc` import. Build inputs are pinned by
+  SHA-256 and are never committed (GPLv2+CE).
 - **Local builds** (optional convenience): `scripts\build_hap.bat`
   (Windows) / `scripts/build_hap.sh` (macOS/Linux) drive the locally
   installed DevEco Studio the same way.
@@ -129,6 +143,39 @@ Full walkthrough incl. self-test mode, account setup, runtime deployment:
   ```
 - **Contributing**: see CONTRIBUTING.md — includes the file-format rules
   table that keeps hvigor happy.
+
+## HarmonyOS 6.1.1 (API 24) specifics
+
+The project targets SDK **6.1.1.125 / API 24** (Release) and DevEco Studio
+6.1.1. Areas where API 24 is used directly:
+
+- **taskpool.Configs** — downloads run with an explicit priority and a hard
+  per-file timeout (`taskpool.execute(task, { priority, timeout })`), plus
+  bounded retries for 5xx/transport failures and stalled streams.
+- **hidebug.getRssInfo()** and **util.ArkTSVM.getAllVMHeapMemoryInfo()** —
+  Settings → Diagnostics shows process RSS/swap and ArkTS heap usage.
+- **util.ArkTSVM.onVMHeapMemoryPressure()** — heap pressure is logged to the
+  Console tab before an OOM kill.
+- **storageStatistics** — free bytes (sync) and free inodes (API 24) are
+  checked before large asset batches and shown in Diagnostics.
+- **DevEco Studio 6.1.1 Hot Reload** covers native C++ sources and
+  resources as well as ArkTS, so bridge iterations no longer require a full
+  rebuild.
+
+Modern Mojang metadata is handled as shipped: `${classpath}` and
+`${natives_directory}` are substituted from the install tree, the native
+loader owns `-cp`/`-Djava.library.path`, and the version's full
+`assetIndex.url` is fetched (and SHA-1 verified) instead of being
+reconstructed. The runtime catalog covers aarch64 Java 8/17/21/25 and
+x86_64 Java 21/25 — Minecraft 26.x requires Java 25, and the launcher never
+falls back to an older major version. x86_64 checksums are refreshed from
+the release catalog before download; JDK8-style `jre/lib/<arch>/server`
+layouts are normalized alongside modern `lib/server`.
+
+Known architectural limitation: the embedded HotSpot JVM is linked
+in-process, so `System.exit` ends the app process; "Leave game" closes the
+application rather than returning to the dashboard. A restartable JVM
+requires running the game in a separate process/service.
 
 ## Legal summary
 

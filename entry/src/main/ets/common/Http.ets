@@ -106,7 +106,9 @@ export async function downloadToFile(url: string, options: FileDownloadOptions):
   const requestHeaders: Record<string, string> = mergeHeaders(options.headers);
   try {
     ensureParentDir(partPath);
-    fs.unlinkSync(partPath);
+    if (fs.accessSync(partPath)) {
+      fs.unlinkSync(partPath);
+    }
     fd = fs.openSync(partPath, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC).fd;
 
     client.on('headersReceive', (h: Object) => {
@@ -128,20 +130,31 @@ export async function downloadToFile(url: string, options: FileDownloadOptions):
         }
       }
     });
-    const streamDone: Promise<void> = new Promise<void>((resolve: () => void) => {
+    let watchdog: number = -1;
+    const streamDone: Promise<void> = new Promise<void>((resolve: () => void,
+      reject: (err: Error) => void) => {
+      watchdog = setTimeout(() => {
+        reject(new Error('download stream stalled'));
+      }, 300000);
       client.on('dataEnd', () => {
         resolve();
       });
     });
 
-    const code: number = await client.requestInStream(url, {
-      method: http.RequestMethod.GET,
-      header: requestHeaders,
-      connectTimeout: DEFAULT_TIMEOUT_MS,
-      readTimeout: 120000
-    } as http.HttpRequestOptions);
-
-    await streamDone;
+    let code: number = -1;
+    try {
+      code = await client.requestInStream(url, {
+        method: http.RequestMethod.GET,
+        header: requestHeaders,
+        connectTimeout: DEFAULT_TIMEOUT_MS,
+        readTimeout: 120000
+      } as http.HttpRequestOptions);
+      await streamDone;
+    } finally {
+      if (watchdog >= 0) {
+        clearTimeout(watchdog);
+      }
+    }
     fs.closeSync(fd);
     fd = -1;
     client.destroy();

@@ -10,8 +10,10 @@
 #include "log_capture.h"
 
 #include <unistd.h>
+#include <cerrno>
 #include <cstdio>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -22,6 +24,7 @@ namespace {
 std::mutex g_mutex;
 std::function<void(const char *)> g_sink;
 FILE *g_logFile = nullptr;
+std::string g_logPath;
 bool g_installed = false;
 
 void HandleLine(const std::string &line) {
@@ -73,14 +76,27 @@ void ReaderLoop(int readFd) {
 
 void Install(const std::string &logDir, std::function<void(const char *)> sink) {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_installed) {
-        return;
+    if (sink) {
+        g_sink = std::move(sink);
     }
-    g_sink = std::move(sink);
-
+    // The log directory is only known once the launch config arrives, which
+    // happens after the early Initialize() call; allow attaching it later.
     if (!logDir.empty()) {
         std::string path = logDir + (logDir.back() == '/' ? "" : "/") + "latest.log";
-        g_logFile = std::fopen(path.c_str(), "a");
+        // Repeated launches (e.g. JVM boot followed by surface self-test)
+        // pass the same directory; keep the existing handle rather than
+        // truncating output already written by the VM.
+        if (path != g_logPath) {
+            if (g_logFile != nullptr) {
+                std::fclose(g_logFile);
+                g_logFile = nullptr;
+            }
+            g_logPath = path;
+            g_logFile = std::fopen(path.c_str(), "w");
+        }
+    }
+    if (g_installed) {
+        return;
     }
 
     int fds[2];

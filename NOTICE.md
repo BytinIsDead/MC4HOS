@@ -44,13 +44,22 @@ distributing MC4HOS binaries:
 
 | Component | Role | License | Upstream |
 |---|---|---|---|
-| OpenJDK (aarch64, OpenHarmony build) | Embedded Java runtime executing the game | GPLv2 + Classpath Exception | https://openjdk.org |
+| OpenJDK (aarch64 / x86_64 OpenHarmony builds) | Embedded Java runtime executing the game | GPLv2 + Classpath Exception | https://openjdk.org |
 | LWJGL 3 (OpenHarmony build) | Java-side OpenGL/OpenAL bindings used by the game | BSD-3-Clause | https://lwjgl.org |
 | OpenAL Soft (OpenHarmony build) | Audio backend (`libopenal.so`) | LGPL-2.1 (or later) | https://openal-soft.org |
 | gl4es / GL-on-GLES translation layer (optional) | Desktop GL → OpenGL ES translation for `libGL.so` | MIT | https://github.com/ptitSeb/gl4es |
 
 Distribution obligations (offer of source, license text preservation, and
 NOTICE propagation) apply to those binaries per their respective licenses.
+
+The build scripts in `openharmony-jdk/` are original MC4HOS code under this
+repository's MPL-2.0 terms. They **download** the third-party OpenJDK source
+and the OHOS patch/stub archives at build time; those archives and the
+resulting JDK images are GPLv2+CE works and are never committed. Each
+produced x86_64 runtime pack preserves the upstream license files and records
+its exact source repositories, commits, and build-input identity. The
+aarch64 runtime packs are downloaded from pinned public community releases
+and retain their own notices.
 
 **Trademark notice:** *Minecraft* is a trademark of Mojang Synergies AB. The
 name "MC4HOS" refers to this launcher in a purely descriptive, nominative

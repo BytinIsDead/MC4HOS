@@ -12,6 +12,7 @@ import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
 import { RuleSet, ArgEntry } from '../download/VersionManifest';
 import { GameInstaller } from '../download/GameInstaller';
+import { JavaRuntimeManager } from '../download/JavaRuntimeManager';
 import { BuiltLaunch, LaunchContext, LAUNCHER_NAME, LAUNCHER_VERSION } from './LaunchConfig';
 
 /**
@@ -33,9 +34,13 @@ const TAG: string = 'JvmArgs';
 export class JvmArgumentBuilder {
   private readonly ctx: LaunchContext;
   private readonly placeholder: Map<string, string> = new Map();
+  private readonly classPath: string;
 
   public constructor(ctx: LaunchContext) {
     this.ctx = ctx;
+    // Computed up front because modern version descriptors reference
+    // ${classpath} inside arguments.jvm.
+    this.classPath = this.buildClassPath();
     this.fillPlaceholders();
   }
 
@@ -47,8 +52,7 @@ export class JvmArgumentBuilder {
       return null;
     }
 
-    const classPath: string = this.buildClassPath();
-    if (classPath.length === 0) {
+    if (this.classPath.length === 0) {
       Logger.error(TAG, 'classpath is empty; install the version first');
       return null;
     }
@@ -60,7 +64,7 @@ export class JvmArgumentBuilder {
       `${gameArgs.length} game args`);
     return {
       javaHome: this.ctx.javaHome,
-      classPath: classPath,
+      classPath: this.classPath,
       nativesDirs: this.buildNativesDirs(),
       jvmOptions: jvmOptions,
       mainClass: version.mainClass,
@@ -98,6 +102,8 @@ export class JvmArgumentBuilder {
     p.set('resolution_height', `${this.ctx.resolutionHeight}`);
     p.set('library_directory', Paths.librariesDir());
     p.set('classpath_separator', ':');
+    p.set('classpath', this.classPath);
+    p.set('natives_directory', this.ctx.nativesDir);
     p.set('primary_jar', Paths.clientJarPath(v.id));
     p.set('quickPlayPath', '');
     p.set('quickPlaySingleplayer', '');
@@ -216,8 +222,13 @@ export class JvmArgumentBuilder {
     if (Paths.hapNativeLibraryDir().length > 0) {
       dirs.push(Paths.hapNativeLibraryDir());
     }
-    dirs.push(`${this.ctx.javaHome}/lib/server`);
-    dirs.push(`${this.ctx.javaHome}/lib`);
+    // Runtime layout differs between JDK8 (lib/<arch>/) and modern JDKs
+    // (lib/server/); the manager only returns directories that exist.
+    for (const dir of JavaRuntimeManager.nativeLibraryDirs(this.ctx.javaHome)) {
+      if (dirs.indexOf(dir) < 0) {
+        dirs.push(dir);
+      }
+    }
     return dirs.join(':');
   }
 
@@ -305,8 +316,10 @@ export class JvmArgumentBuilder {
         }
       }
     }
-    // Inject custom resolution when both dimensions are configured.
-    if (this.ctx.resolutionWidth > 0 && this.ctx.resolutionHeight > 0) {
+    // Modern descriptors already emit --width/--height when the custom
+    // resolution feature is enabled; only legacy arguments need them added.
+    if (this.ctx.resolutionWidth > 0 && this.ctx.resolutionHeight > 0 &&
+      args.indexOf('--width') < 0) {
       args.push('--width');
       args.push(`${this.ctx.resolutionWidth}`);
       args.push('--height');

@@ -251,7 +251,14 @@ export class MicrosoftAuth {
     if (xstsJson === null) {
       return null;
     }
-    const uhs: string = MicrosoftAuth.firstUserHash(xstsJson);
+    let uhs: string = MicrosoftAuth.firstUserHash(xstsJson);
+    if (uhs.length === 0) {
+      uhs = MicrosoftAuth.firstUserHash(xblJson);
+    }
+    if (uhs.length === 0) {
+      Logger.warn(TAG, 'refresh: no user hash in XBL/XSTS response');
+      return null;
+    }
     const loginPayload: Record<string, string> = {};
     loginPayload['identityToken'] = `XBL3.0 x=${uhs};${getStr(xstsJson, 'Token')}`;
     const acceptHeaders: Record<string, string> = {};

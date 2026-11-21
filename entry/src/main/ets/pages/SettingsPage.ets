@@ -9,6 +9,9 @@
 
 import preferences from '@ohos.data.preferences';
 import common from '@ohos.app.ability.common';
+import hidebug from '@ohos.hidebug';
+import util from '@ohos.util';
+import storageStatistics from '@ohos.file.storageStatistics';
 import { MicrosoftAuth } from '../auth/MicrosoftAuth';
 import { GameLauncherPushBridge } from './HomeTab.ets';
 import {
@@ -36,6 +39,46 @@ export struct SettingsPage {
   @State packZipName: string = '';
   @State nativesMcVersion: string = '';
   @State deployStatus: string = '';
+  @State diagMemory: string = '';
+  @State diagHeap: string = '';
+  @State diagStorage: string = '';
+
+  private async refreshDiagnostics(): Promise<void> {
+    this.diagMemory = 'Reading…';
+    try {
+      const info = hidebug.getRssInfo();
+      const rssMb: number = Math.round(Number(info.rss) / 1024);
+      const swapMb: number = Math.round(Number(info.swapRss) / 1024);
+      this.diagMemory = `Process RSS ${rssMb} MB, swap ${swapMb} MB`;
+    } catch (err) {
+      this.diagMemory = `RSS unavailable: ${(err as Error).message}`;
+    }
+    try {
+      const heaps: Array<util.HeapMemoryInfo> = await util.ArkTSVM.getAllVMHeapMemoryInfo();
+      let objectsKb: number = 0;
+      for (const heap of heaps) {
+        objectsKb += heap.heapObjectSize;
+      }
+      this.diagHeap = `${heaps.length} ArkTS heaps, ${(objectsKb / 1024).toFixed(1)} MB objects`;
+    } catch (err) {
+      this.diagHeap = `ArkTS heap info unavailable: ${(err as Error).message}`;
+    }
+    try {
+      const freeBytes: number = storageStatistics.getFreeSizeSync();
+      let inodes: number = -1;
+      try {
+        inodes = await storageStatistics.getFreeInodes();
+      } catch (err) {
+        inodes = -1;
+      }
+      const freeGb: string = (freeBytes / 1073741824).toFixed(2);
+      this.diagStorage = inodes >= 0
+        ? `${freeGb} GB free, ${inodes} free inodes`
+        : `${freeGb} GB free`;
+    } catch (err) {
+      this.diagStorage = `Storage info unavailable: ${(err as Error).message}`;
+    }
+  }
 
   private runImport(promise: Promise<string>): void {
     this.deployStatus = 'Working…';
@@ -48,6 +91,7 @@ export struct SettingsPage {
 
   aboutToAppear(): void {
     this.loadClientId();
+    this.refreshDiagnostics();
   }
 
   private async loadClientId(): Promise<void> {
@@ -178,6 +222,54 @@ export struct SettingsPage {
               .margin({ top: 4 })
           }
 
+          // Runtime diagnostics (HarmonyOS 6.1.1 / API 24 capabilities)
+          Row() {
+            Column() {
+              Text('Diagnostics')
+                .fontSize(14)
+                .fontColor('#FFFFFF')
+              Text('Process RSS and ArkTS heap via hidebug/ArkTSVM; storage free space and inodes.')
+                .fontSize(11)
+                .fontColor('#8FA0B3')
+                .margin({ top: 2 })
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+            Button('Refresh')
+              .height(32)
+              .fontSize(12)
+              .backgroundColor('#2A3340')
+              .onClick(() => {
+                this.refreshDiagnostics();
+              })
+          }
+          .width('100%')
+          .margin({ top: 16 })
+          if (this.diagMemory.length > 0) {
+            Column() {
+              Text(this.diagMemory)
+                .fontSize(11)
+                .fontColor('#9FB6CD')
+                .width('100%')
+              Text(this.diagHeap)
+                .fontSize(11)
+                .fontColor('#9FB6CD')
+                .width('100%')
+                .margin({ top: 2 })
+              Text(this.diagStorage)
+                .fontSize(11)
+                .fontColor('#9FB6CD')
+                .width('100%')
+                .margin({ top: 2 })
+            }
+            .width('100%')
+            .padding(10)
+            .borderRadius(8)
+            .backgroundColor('#1A1F27')
+            .margin({ top: 6 })
+            .alignItems(HorizontalAlign.Start)
+          }
+
           // Deployment (device testing without a PC file browser)
           Text('Deployment')
             .fontSize(14)
@@ -189,7 +281,7 @@ export struct SettingsPage {
             .fontColor('#8FA0B3')
             .width('100%')
             .margin({ top: 2 })
-          TextInput({ text: this.packZipName, placeholder: 'jre17-ohos-x86_64.zip' })
+          TextInput({ text: this.packZipName, placeholder: 'jre21-ohos-x86_64.zip' })
             .width('100%')
             .height(40)
             .fontSize(13)

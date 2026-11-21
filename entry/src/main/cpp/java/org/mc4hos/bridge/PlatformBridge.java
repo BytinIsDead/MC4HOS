@@ -29,12 +29,20 @@ public final class PlatformBridge {
      * XComponent surface dimensions (physical pixels).
      */
     public static void onGameSurfaceCreated(int width, int height) {
-        surfaceWidth = width;
-        surfaceHeight = height;
-        surfaceReady = true;
+        onGameSurfaceChanged(width, height);
         if (!InputBridge.isInitialized()) {
             InputBridge.markInitialized();
         }
+    }
+
+    /**
+     * Invoked whenever the XComponent surface is resized (rotation, window
+     * change, or creation after the VM already booted).
+     */
+    public static void onGameSurfaceChanged(int width, int height) {
+        surfaceWidth = width;
+        surfaceHeight = height;
+        surfaceReady = true;
         System.out.println("[MC4HOS] PlatformBridge: surface " + width + "x" + height);
     }
 

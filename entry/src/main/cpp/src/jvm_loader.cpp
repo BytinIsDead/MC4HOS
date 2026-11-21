@@ -18,6 +18,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 #include <atomic>
 #include <thread>
 
@@ -113,6 +115,36 @@ void PrependLdLibraryPath(const std::string &dirs) {
     ::setenv("LD_LIBRARY_PATH", value.c_str(), 1);
 }
 
+/**
+ * Runtime images link libjvm against libcxxabi_shim.so (and libc++_shared,
+ * which the HAP already loads). The loader does not search libjvm's own
+ * directory for that dependency, so load it first by absolute path.
+ */
+void PreloadAbiShim(const std::string &home) {
+    const std::vector<std::string> candidates = {
+        home + "lib/libcxxabi_shim.so",
+        home + "lib/aarch64/libcxxabi_shim.so",
+        home + "lib/x86_64/libcxxabi_shim.so",
+        home + "lib/arm64/libcxxabi_shim.so",
+        home + "jre/lib/libcxxabi_shim.so",
+        home + "jre/lib/aarch64/libcxxabi_shim.so",
+        home + "jre/lib/x86_64/libcxxabi_shim.so",
+    };
+    for (const std::string &candidate : candidates) {
+        if (::access(candidate.c_str(), R_OK) != 0) {
+            continue;
+        }
+        if (::dlopen(candidate.c_str(), RTLD_NOW | RTLD_GLOBAL) != nullptr) {
+            log::Emit("[MC4HOS] loaded " + candidate);
+        } else {
+            const char *err = ::dlerror();
+            log::Emit(std::string("[MC4HOS] preload failed for ") + candidate + ": " +
+                      (err != nullptr ? err : "unknown error"));
+        }
+        return;
+    }
+}
+
 } // namespace
 
 void SetGlobalJavaVM(void *vm) {
@@ -134,6 +166,9 @@ void RequestJvmExit() {
     if (g_exitRequested.exchange(true)) {
         return;
     }
+    // Stop input dispatch before the VM begins shutting down; a JNI call
+    // raced against System.exit can abort the process.
+    input::SetJvmReady(false);
     JNIEnv *env = jni::AttachCurrentThread();
     if (env != nullptr) {
         jni::CallSystemExit(env, 0);
@@ -148,15 +183,47 @@ int StartJvm(const LaunchConfig &config) {
         return kErrNoJavaHome;
     }
 
-    std::string libJvmPath =
-        config.javaHome + (config.javaHome.back() == '/' ? "" : "/") + "lib/server/libjvm.so";
-    void *handle = ::dlopen(libJvmPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    std::string home = config.javaHome;
+    if (home.back() != '/') {
+        home += "/";
+    }
+    // JVM options below also read these, but the ABI shim must be resolvable
+    // before libjvm itself is loaded.
+    PrependLdLibraryPath(config.nativesDirs);
+    PreloadAbiShim(home);
+    // Modern OpenJDK images put the VM in lib/server/; JDK8 uses
+    // lib/<arch>/server/. Try both, plus a nested jre/ in case the caller
+    // passed the JDK root instead of the normalized JRE root.
+    const std::vector<std::string> candidates = {
+        home + "lib/server/libjvm.so",
+        home + "lib/aarch64/server/libjvm.so",
+        home + "lib/x86_64/server/libjvm.so",
+        home + "lib/arm64/server/libjvm.so",
+        home + "jre/lib/server/libjvm.so",
+        home + "jre/lib/aarch64/server/libjvm.so",
+        home + "jre/lib/x86_64/server/libjvm.so",
+    };
+    void *handle = nullptr;
+    std::string libJvmPath;
+    std::string lastError;
+    for (const std::string &candidate : candidates) {
+        handle = ::dlopen(candidate.c_str(), RTLD_NOW | RTLD_GLOBAL);
+        if (handle != nullptr) {
+            libJvmPath = candidate;
+            break;
+        }
+        const char *err = ::dlerror();
+        if (err != nullptr) {
+            lastError = err;
+        }
+    }
     if (handle == nullptr) {
-        log::Emit(std::string("[MC4HOS] dlopen(libjvm) failed: ") + ::dlerror());
+        log::Emit(std::string("[MC4HOS] dlopen(libjvm) failed: ") + lastError);
         log::Emit("[MC4HOS] javaHome=" + config.javaHome +
-                  " — is an OpenHarmony aarch64 OpenJDK runtime installed? (docs/NATIVES.md)");
+                  " — is an OpenHarmony OpenJDK runtime for this ABI installed? (docs/NATIVES.md)");
         return kErrLibJvmMissing;
     }
+    log::Emit("[MC4HOS] loaded " + libJvmPath);
     auto createJvm = reinterpret_cast<CreateJvmFn>(::dlsym(handle, "JNI_CreateJavaVM"));
     if (createJvm == nullptr) {
         log::Emit(std::string("[MC4HOS] dlsym(JNI_CreateJavaVM) failed: ") + ::dlerror());
@@ -165,19 +232,29 @@ int StartJvm(const LaunchConfig &config) {
 
     // Runtime environment (best effort; the JVM reads these at init).
     ::setenv("JAVA_HOME", config.javaHome.c_str(), 1);
-    PrependLdLibraryPath(config.nativesDirs);
 
-    // Assemble VM options: base properties first, then user options. Note
-    // classpath/library-path are supplied here, never as -cp flags.
+    // Assemble VM options: base properties first, then user options. The
+    // classpath/library path have a single owner (this function): modern
+    // version JSON also emits "-cp <classpath>" and "-Djava.library.path=…",
+    // so those are dropped together with their values.
     std::vector<std::string> optionStrings;
     optionStrings.push_back("-Djava.home=" + config.javaHome);
     optionStrings.push_back("-Djava.class.path=" + config.classPath);
     optionStrings.push_back("-Djava.library.path=" + config.nativesDirs);
     optionStrings.push_back("-Duser.dir=" + config.workingDir);
     optionStrings.push_back("-Dsun.java.command=" + config.mainClass);
-    for (const std::string &opt : config.jvmOptions) {
-        // The ArkTS builder must not emit -cp/-classpath; guard anyway.
-        if (opt == "-cp" || opt == "-classpath" || opt.rfind("-Djava.class.path=", 0) == 0) {
+    for (size_t i = 0; i < config.jvmOptions.size(); i++) {
+        const std::string &opt = config.jvmOptions[i];
+        if (opt == "-cp" || opt == "-classpath") {
+            // Skip the classpath value that follows the flag.
+            i++;
+            continue;
+        }
+        if (opt.rfind("-Djava.class.path=", 0) == 0 ||
+            opt.rfind("-Djava.library.path=", 0) == 0 ||
+            opt.rfind("-Djava.home=", 0) == 0 ||
+            opt.rfind("-Duser.dir=", 0) == 0 ||
+            opt.rfind("-Dsun.java.command=", 0) == 0) {
             continue;
         }
         optionStrings.push_back(opt);
@@ -195,7 +272,9 @@ int StartJvm(const LaunchConfig &config) {
     vmArgs.version = JNI_VERSION_1_8;
     vmArgs.nOptions = static_cast<jint>(options.size());
     vmArgs.options = options.data();
-    vmArgs.ignoreUnrecognized = JNI_FALSE;
+    // Version descriptors target the newest JDK; tolerate options the
+    // installed runtime does not know instead of failing VM creation.
+    vmArgs.ignoreUnrecognized = JNI_TRUE;
 
     log::Emit("[MC4HOS] creating JVM (" + std::to_string(options.size()) + " options)");
     JavaVM *vm = nullptr;

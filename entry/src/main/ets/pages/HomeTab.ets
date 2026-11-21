@@ -30,6 +30,7 @@ export struct HomeTab {
   @State progress: LaunchProgress = { phase: 'idle', message: '' };
   @State launching: boolean = false;
   private navStack: NavPathStack | null = null;
+  private progressListener: ((p: LaunchProgress) => void) | null = null;
 
   aboutToAppear(): void {
     this.ramMb = clampRam(this.ramMb);
@@ -39,14 +40,23 @@ export struct HomeTab {
         this.selectedVersion = this.versions[0].id;
       }
     });
-    GameLauncher.onProgress((p: LaunchProgress) => {
+    const listener: (p: LaunchProgress) => void = (p: LaunchProgress) => {
       this.progress = p;
       if (p.phase === 'running') {
         this.launching = false;
       } else if (p.phase === 'failed') {
         this.launching = false;
       }
-    });
+    };
+    this.progressListener = listener;
+    GameLauncher.onProgress(listener);
+  }
+
+  aboutToDisappear(): void {
+    if (this.progressListener !== null) {
+      GameLauncher.offProgress(this.progressListener);
+      this.progressListener = null;
+    }
   }
 
   private async play(): Promise<void> {

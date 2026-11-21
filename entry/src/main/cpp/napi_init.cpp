@@ -52,10 +52,12 @@ bool GetStringProperty(napi_env env, napi_value obj, const char *key, std::strin
     }
     size_t size = 0;
     napi_get_value_string_utf8(env, value, nullptr, 0, &size);
-    out.resize(size);
+    // Include the NUL terminator in the buffer, then trim it from `out`.
+    out.resize(size + 1);
     if (size > 0) {
-        napi_get_value_string_utf8(env, value, out.data(), size + 1, &size);
+        napi_get_value_string_utf8(env, value, out.data(), out.size(), &size);
     }
+    out.resize(size);
     return true;
 }
 
@@ -77,13 +79,18 @@ bool GetStringArrayProperty(napi_env env, napi_value obj, const char *key,
         if (napi_get_element(env, array, i, &element) != napi_ok) {
             continue;
         }
+        napi_valuetype elementType = napi_undefined;
+        if (napi_typeof(env, element, &elementType) != napi_ok || elementType != napi_string) {
+            continue;
+        }
         size_t size = 0;
         napi_get_value_string_utf8(env, element, nullptr, 0, &size);
         std::string text;
-        text.resize(size);
+        text.resize(size + 1);
         if (size > 0) {
-            napi_get_value_string_utf8(env, element, text.data(), size + 1, &size);
+            napi_get_value_string_utf8(env, element, text.data(), text.size(), &size);
         }
+        text.resize(size);
         out.push_back(text);
     }
     return true;

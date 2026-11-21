@@ -22,6 +22,11 @@ hvigor/hvigor-config.json5.bak
 # local build output
 /out
 
+# openharmony-jdk local cross-build work/output (JDK sources, sysroots, images)
+openharmony-jdk/work*/
+openharmony-jdk/out/
+openharmony-jdk/dist/
+
 # ohpm lock files regenerate per-platform; commit none
 oh-package-lock.json5
 entry/oh-package-lock.json5
