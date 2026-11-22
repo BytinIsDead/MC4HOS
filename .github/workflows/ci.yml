@@ -30,6 +30,7 @@ name: CI
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -65,8 +66,52 @@ jobs:
     name: Build HAP (unsigned)
     runs-on: ubuntu-latest
     needs: verify
+    outputs:
+      version: ${{ steps.rel.outputs.version }}
+      tag: ${{ steps.rel.outputs.tag }}
+      codename: ${{ steps.rel.outputs.codename }}
+      patch: ${{ steps.rel.outputs.patch }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Tag pushes cut a release. Push a base tag (v1.0) to auto-increment
+      # the patch, or a full tag (v1.0.7) to pin it. Releases are titled
+      # "<version> <Codename> PATCH<n>" and the same version is stamped into
+      # AppScope/app.json5 before the build.
+      - name: Compute release identity (tags only)
+        id: rel
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME#v}"
+          BASE="$(echo "$REF" | cut -d. -f1-2)"
+          PATCH_PART="$(echo "$REF" | cut -d. -f3)"
+          if ! echo "$BASE" | grep -Eq '^[0-9]+\.[0-9]+$'; then
+            echo "::error::release tag must look like v1.0 or v1.0.7"
+            exit 1
+          fi
+          if echo "$PATCH_PART" | grep -Eq '^[0-9]+$'; then
+            PATCH="$PATCH_PART"
+          else
+            LATEST="$(git tag -l "v$BASE.*" | sed -E "s/^v$BASE\.([0-9]+)$/\1/" | sort -n | tail -1)"
+            PATCH=$(( ${LATEST:-0} + 1 ))
+          fi
+          VERSION="$BASE.$PATCH"
+          CODENAMES=(Aurora Nebula Zephyr Halcyon Meridian Solstice Nimbus Obsidian
+                     Lumen Cascade Vireo Onyx Ember Quasar Tundra Cirrus Basalt
+                     Sable Mica Cobalt)
+          CODENAME="${CODENAMES[$((RANDOM % ${#CODENAMES[@]}))]}"
+          sed -i -E "s/(\"versionName\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")/\1$VERSION\2/" AppScope/app.json5
+          sed -i -E "s/(\"versionCode\"[[:space:]]*:[[:space:]]*)[0-9]+/\1$((1000000 + PATCH))/" AppScope/app.json5
+          {
+            echo "version=$VERSION"
+            echo "tag=v$VERSION"
+            echo "codename=$CODENAME"
+            echo "patch=$PATCH"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release: $VERSION $CODENAME PATCH$PATCH"
 
       - name: Cache toolchain zip
         id: cache
@@ -183,3 +228,43 @@ jobs:
             .hvigor/outputs/logs/**
             entry/.cxx/**/*.log
           if-no-files-found: ignore
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mc4hos-hap
+          path: dist
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          CODENAME: ${{ needs.build.outputs.codename }}
+          PATCH: ${{ needs.build.outputs.patch }}
+        run: |
+          set -euo pipefail
+          SLUG="$(printf '%s' "$CODENAME" | tr '[:upper:]' '[:lower:]')"
+          ASSET="mc4hos-${VERSION}-${SLUG}-patch${PATCH}.hap"
+          mv dist/*.hap "dist/$ASSET"
+          ( cd dist && sha256sum "$ASSET" > "$ASSET.sha256" )
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            TARGET_ARGS=()
+          else
+            TARGET_ARGS=(--target "$GITHUB_SHA")
+          fi
+          gh release create "$TAG" "dist/$ASSET" "dist/$ASSET.sha256" \
+            --title "$VERSION $CODENAME PATCH$PATCH" \
+            --notes "Unsigned HAP built from $GITHUB_SHA. Sign locally before installing." \
+            "${TARGET_ARGS[@]}"
