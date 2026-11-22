@@ -22,6 +22,10 @@ hvigor/hvigor-config.json5.bak
 # local build output
 /out
 
+# Node harness output (tests/.build is generated from entry/src/main/ets/core)
+/tests/.build
+/tests/node_modules
+
 # openharmony-jdk local cross-build work/output (JDK sources, sysroots, images)
 openharmony-jdk/work*/
 openharmony-jdk/out/

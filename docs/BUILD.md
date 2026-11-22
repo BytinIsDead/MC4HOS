@@ -152,6 +152,27 @@ Then in the app: Settings → **Deployment** → import each file (the app
 copies them into its own sandbox, extracts runtime packs and natives, and
 writes the runtime.json markers automatically).
 
+**Importing any JDK/JRE from a `.zip`** — like Android launchers, without a
+PC: Settings → **Java runtime** → **Import JDK from .zip** opens the system
+document picker. Pick a `.zip` reachable by the picker (Downloads, cloud
+drives, external storage). The app copies it into its sandbox, extracts it,
+and validates it before registering:
+
+- `libjvm.so` must exist at `lib/server/` (modern JDKs) or
+  `lib/<arch>/server/` (JDK8 and single-folder layouts), at the archive root
+  or inside one top-level folder;
+- the architecture is read from `OS_ARCH` in `release`, falling back to the
+  ELF header of `libjvm.so`; it must match the device ABI;
+- the Java major version comes from `JAVA_VERSION` in `release`, falling
+  back to the archive name (`jre21…`, `jdk-8…`).
+
+Each import gets a unique name (`jre21-ohos-x86_64-2` when the first is
+already installed) and a `runtime.json` marker, appears under *Installed
+runtimes*, and is picked automatically by the required Java version. A
+failed import removes the partial extraction and the copied zip. The
+imported JDK keeps its own license; MC4HOS does not support or redistribute
+third-party JDK builds.
+
 The app sandbox directory is
 `/data/app/el2/100/base/org.mc4hos.launcher/haps/entry/files/mc4hos/`
 (emulator/rooted devices and DevEco's Device File Browser can write there

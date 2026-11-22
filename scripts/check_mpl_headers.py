@@ -18,8 +18,8 @@ import sys
 
 REQUIRED = "SPDX-License-Identifier: MPL-2.0-no-copyleft-exception"
 SKIP_DIRS = {".git", "node_modules", "oh_modules", ".cxx", ".idea", "build",
-             ".hvigor", ".preview", ".zcode", "rawfile"}
-EXTS = {".ets", ".ts", ".cpp", ".h", ".java", ".json5", ".md", ".txt",
+             ".hvigor", ".preview", ".zcode", "rawfile", ".build"}
+EXTS = {".ets", ".ts", ".mjs", ".cpp", ".h", ".java", ".json5", ".md", ".txt",
         ".py", ".yml", ".yaml"}
 NAMED = {"CMakeLists.txt"}
 EXEMPT = {"LICENSE", "oh-package-lock.json5", "entry/oh-package-lock.json5"}

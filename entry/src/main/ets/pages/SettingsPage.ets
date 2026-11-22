@@ -12,6 +12,7 @@ import common from '@ohos.app.ability.common';
 import hidebug from '@ohos.hidebug';
 import util from '@ohos.util';
 import storageStatistics from '@ohos.file.storageStatistics';
+import picker from '@ohos.file.picker';
 import { MicrosoftAuth } from '../auth/MicrosoftAuth';
 import { GameLauncherPushBridge } from './HomeTab.ets';
 import {
@@ -19,6 +20,9 @@ import {
   clampRam, maxDeviceRamMb
 } from '../common/AppState';
 import { DeployImport } from '../common/DeployImport';
+import { RuntimeImporter } from '../download/RuntimeImporter';
+import { JavaRuntimeManager } from '../download/JavaRuntimeManager';
+import { Paths } from '../common/Paths';
 
 /**
  * Settings: memory, internal render resolution scale, self-test mode,
@@ -39,6 +43,9 @@ export struct SettingsPage {
   @State packZipName: string = '';
   @State nativesMcVersion: string = '';
   @State deployStatus: string = '';
+  @State jdkStatus: string = '';
+  @State importingJdk: boolean = false;
+  @State installedRuntimes: Array<string> = [];
   @State diagMemory: string = '';
   @State diagHeap: string = '';
   @State diagStorage: string = '';
@@ -92,6 +99,43 @@ export struct SettingsPage {
   aboutToAppear(): void {
     this.loadClientId();
     this.refreshDiagnostics();
+    this.refreshRuntimes();
+  }
+
+  private refreshRuntimes(): void {
+    const runtimes = JavaRuntimeManager.listInstalled();
+    const lines: Array<string> = [];
+    for (const runtime of runtimes) {
+      const abi: string = runtime.abi !== undefined ? runtime.abi : 'abi unknown';
+      lines.push(`${runtime.name} — Java ${runtime.javaMajor}, ${abi}`);
+    }
+    this.installedRuntimes = lines;
+  }
+
+  /** Android-style import: system picker → copy → extract → validate. */
+  private async importJdkZip(): Promise<void> {
+    if (this.importingJdk) {
+      return;
+    }
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const options = new picker.DocumentSelectOptions();
+      options.maxSelectNumber = 1;
+      options.fileSuffixFilters = ['.zip'];
+      const viewPicker = new picker.DocumentViewPicker(context);
+      const uris: Array<string> = await viewPicker.select(options);
+      if (uris.length === 0) {
+        return;
+      }
+      this.importingJdk = true;
+      this.jdkStatus = 'Importing… large archives can take a minute.';
+      this.jdkStatus = await RuntimeImporter.importZip(uris[0]);
+    } catch (err) {
+      this.jdkStatus = `Import error: ${(err as Error).message}`;
+    } finally {
+      this.importingJdk = false;
+      this.refreshRuntimes();
+    }
   }
 
   private async loadClientId(): Promise<void> {
@@ -261,6 +305,59 @@ export struct SettingsPage {
                 .fontColor('#9FB6CD')
                 .width('100%')
                 .margin({ top: 2 })
+            }
+            .width('100%')
+            .padding(10)
+            .borderRadius(8)
+            .backgroundColor('#1A1F27')
+            .margin({ top: 6 })
+            .alignItems(HorizontalAlign.Start)
+          }
+
+          // Java runtimes (Android-style zip import)
+          Text('Java runtime')
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+            .width('100%')
+            .margin({ top: 16 })
+          Text(`Import an OpenHarmony JDK/JRE .zip built for ${Paths.deviceAbi()} ` +
+            '(bin/, lib/, release at the root or inside one top-level folder). ' +
+            'It is validated, registered, and used automatically when a game needs it. ' +
+            'The imported JDK keeps its own license terms.')
+            .fontSize(11)
+            .fontColor('#8FA0B3')
+            .width('100%')
+            .margin({ top: 2 })
+          Button(this.importingJdk ? 'Importing…' : 'Import JDK from .zip')
+            .width('100%')
+            .height(40)
+            .fontSize(13)
+            .backgroundColor('#5FA8D3')
+            .enabled(!this.importingJdk)
+            .margin({ top: 8 })
+            .onClick(() => {
+              this.importJdkZip();
+            })
+          if (this.jdkStatus.length > 0) {
+            Text(this.jdkStatus)
+              .fontSize(12)
+              .fontColor(this.jdkStatus.startsWith('JDK import failed') ? '#E57373' : '#63C36A')
+              .width('100%')
+              .margin({ top: 6 })
+          }
+          if (this.installedRuntimes.length > 0) {
+            Column() {
+              Text('Installed runtimes')
+                .fontSize(11)
+                .fontColor('#8FA0B3')
+                .width('100%')
+              ForEach(this.installedRuntimes, (line: string) => {
+                Text(line)
+                  .fontSize(11)
+                  .fontColor('#9FB6CD')
+                  .width('100%')
+                  .margin({ top: 2 })
+              }, (line: string) => line)
             }
             .width('100%')
             .padding(10)

@@ -54,6 +54,12 @@ jobs:
         run: python3 scripts/check_mpl_headers.py
       - name: Config rules (strict JSON, modelVersion, SDK strings)
         run: python3 scripts/check_configs.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Core unit tests
+        working-directory: tests
+        run: npm test
 
   build:
     name: Build HAP (unsigned)

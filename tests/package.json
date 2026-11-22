@@ -1,0 +1,8 @@
+{
+  "name": "mc4hos-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node core/build_core.mjs && node --test core/*.test.mjs"
+  }
+}

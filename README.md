@@ -71,6 +71,7 @@ trademark and third-party component obligations.
 | NAPI bridge, JVM loader, JNI main-class invocation, log capture | ✅ implemented |
 | XComponent surface lifecycle + EGL/GLES3 self-test renderer | ✅ implemented |
 | Dual-ABI build (arm64-v8a + x86_64), per-ABI runtime packs & natives | ✅ implemented |
+| Android-style JDK/JRE import from a `.zip` (system file picker, ABI + version validation) | ✅ implemented |
 | aarch64 OpenHarmony OpenJDK 8/17/21/25 runtimes | ✅ bundled into the HAP (fetched at build time, SHA-256 pinned) |
 | x86_64 OpenHarmony OpenJDK 21/25 runtime build | ✅ separate `openharmony-jdk/` tree + CI workflow; bundled once published, otherwise downloaded/imported |
 | LWJGL / OpenAL / GLFW-shim binaries | 🔶 pipeline documented in [docs/NATIVES.md](docs/NATIVES.md); build them from upstream sources |
