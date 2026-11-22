@@ -112,13 +112,13 @@ const RUNTIME_CATALOG: Array<RuntimePackSource> = [
   {
     name: 'jre21-ohos-x86_64', javaMajor: 21, abi: 'x86_64',
     packUrl: `${X86_RELEASE_BASE}/jre21-ohos-x86_64.zip`,
-    sha256: '907950dc183cbaa7a6ecbd09f0243adc2edb7ec6477fde1baf9a7ec58cbc9f1c',
+    sha256: 'e4591490b815be8bcfb5d25ee5b4f56e427968eb5c7cef42cd036270c6f49968',
     sizeBytes: 57722130
   },
   {
     name: 'jre25-ohos-x86_64', javaMajor: 25, abi: 'x86_64',
     packUrl: `${X86_RELEASE_BASE}/jre25-ohos-x86_64.zip`,
-    sha256: '293d7149ab555d19f2abbb64b61c432f115a3b5983668fe0da87a93386337f41',
+    sha256: 'c09787f8cd4c8256b6c3fac02aa8216165e499805442a8ead51683368c3e98c7',
     sizeBytes: 62616461
   }
 ];
