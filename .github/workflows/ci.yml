@@ -202,6 +202,9 @@ jobs:
             --dest entry/src/main/resources/rawfile/jvm
           ls -la entry/src/main/resources/rawfile/jvm || true
 
+      - name: Build bridge jar
+        run: python3 scripts/build_bridge_jar.py
+
       - name: Build HAP (debug, unsigned)
         run: hvigorw --mode module -p module=entry@default -p product=default assembleHap
 
@@ -209,6 +212,8 @@ jobs:
         run: |
           mkdir -p out
           find entry/build -name "*.hap" -exec cp {} out/ \;
+          unzip -l out/*.hap | grep -q "rawfile/bridge/mc4hos-bridge.jar" \
+            || { echo "::error::HAP is missing rawfile/bridge/mc4hos-bridge.jar"; exit 1; }
           ls -la out
 
       - name: Upload HAP artifact

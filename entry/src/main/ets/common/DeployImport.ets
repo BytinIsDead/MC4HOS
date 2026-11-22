@@ -121,6 +121,36 @@ export class DeployImport {
   }
 
   /**
+   * Deploys resources/rawfile/bridge/mc4hos-bridge.jar into the sandbox on
+   * first launch. Returns true when a jar is present afterwards; an already
+   * imported jar is never overwritten.
+   */
+  public static ensureBundledBridge(): boolean {
+    const bridgeDir: string = `${Paths.base()}/bridge`;
+    const dest: string = `${bridgeDir}/mc4hos-bridge.jar`;
+    try {
+      if (fs.accessSync(dest)) {
+        return true;
+      }
+      const data: Uint8Array = getContext().resourceManager
+        .getRawFileContentSync('bridge/mc4hos-bridge.jar');
+      Paths.ensureDir(bridgeDir);
+      const out = fs.openSync(dest,
+        fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+      try {
+        const bytes: ArrayBuffer =
+          data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        fs.writeSync(out.fd, bytes);
+      } finally {
+        fs.closeSync(out);
+      }
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /**
    * Imports a natives zip named `natives-<mcVersion>.zip` whose root
    * contains the lib*.so files for the device ABI. Extracts to
    * natives/<mcVersion>/<abi>/.

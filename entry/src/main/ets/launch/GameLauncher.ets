@@ -11,6 +11,7 @@ import fs from '@ohos.file.fs';
 import display from '@ohos.display';
 import { Logger } from '../common/Logger';
 import { Paths } from '../common/Paths';
+import { DeployImport } from '../common/DeployImport';
 import { KEY_DEMO_MODE } from '../common/AppState';
 import { AccountStore } from '../auth/AccountStore';
 import { VersionManifestInstance } from '../download/VersionManifest';
@@ -107,7 +108,7 @@ export class GameLauncher {
     const bridgeJar: string = `${Paths.base()}/bridge/mc4hos-bridge.jar`;
     if (!fs.accessSync(bridgeJar)) {
       GameLauncher.setPhase('failed',
-        'mc4hos-bridge.jar not deployed — build it per docs/NATIVES.md §3');
+        'mc4hos-bridge.jar missing from the HAP — rebuild with scripts/build_bridge_jar.py');
       return false;
     }
     const nativeLibDirs: Array<string> =
@@ -155,6 +156,8 @@ export class GameLauncher {
       GameLauncher.setPhase('failed', 'A game instance is already running');
       return false;
     }
+    // The HAP bundles the Java bridge; put it on disk before any JVM start.
+    DeployImport.ensureBundledBridge();
     // Self-test mode: boot the embedded JVM with the bundled bridge jar and
     // run org.mc4hos.bridge.SelfTest — no Mojang services, no account, no
     // downloads. Then queue the EGL surface self-test for the game view.
