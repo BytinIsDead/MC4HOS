@@ -10,18 +10,18 @@
 import { getJson, postJson, postForm } from '../common/Http';
 import { JsonObj, parseJson, getStr, getNum, getArr, getObj } from '../common/JsonReader';
 import { Logger } from '../common/Logger';
-import { AccountProfile, AuthSecrets, DeviceCodeResponse, AuthStateUpdate, AuthResult, AuthPhase, TicketProperties } from './AuthModels';
+import { oauthErrorMessage, xboxErrorMessage } from '../core/auth/AuthErrors';
+import { AccountProfile, AuthSecrets, DeviceCodeResponse, DeviceFlowStart, AuthStateUpdate, AuthResult, AuthPhase, TicketProperties } from './AuthModels';
 
 /**
  * Microsoft account sign-in via the OAuth 2.0 Device Authorization Grant
  * (RFC 8628) followed by the publicly documented Xbox Live (XBL/XSTS) and
  * Minecraft services ticket exchanges.
  *
- * MC4HOS ships NO client id. Each builder/distributor registers their own
- * Azure AD application (single-tenant or consumers) with the
- * "Allow public client flows" option enabled and the scope
- * `XboxLive.signin offline_access`; the id is then provided via
- * `MicrosoftAuth.configure()` at startup. See docs/BUILD.md §7.
+ * The Azure application (public client) id is compiled into the app
+ * (`AZURE_CLIENT_ID`) and configured once at startup. The registration must
+ * allow personal Microsoft accounts and public client flows; the scope is
+ * `XboxLive.signin offline_access`. See docs/BUILD.md §7.
  */
 
 const TAG: string = 'Auth';
@@ -37,38 +37,62 @@ const XSTS_AUTH_URL: string = 'https://xsts.auth.xboxlive.com/xsts/authorize';
 const MC_LOGIN_URL: string = 'https://api.minecraftservices.com/authentication/login_with_xbox';
 const MC_PROFILE_URL: string = 'https://api.minecraftservices.com/minecraft/profile';
 
+/** XBL/XSTS reply; `body`/`code` are kept so failures can be explained. */
+interface TicketResponse {
+  json: JsonObj | null;
+  body: string;
+  code: number;
+}
+
 export class MicrosoftAuth {
   private static clientId: string = '';
 
   public static configure(clientId: string): void {
-    MicrosoftAuth.clientId = clientId;
+    MicrosoftAuth.clientId = clientId.trim();
   }
 
   /** RFC 8628 step 1: obtain device_code + user_code for the user to enter. */
-  public static async beginDeviceFlow(): Promise<DeviceCodeResponse | null> {
+  public static async beginDeviceFlow(): Promise<DeviceFlowStart> {
     if (MicrosoftAuth.clientId.length === 0) {
       Logger.error(TAG, 'client id not configured; call MicrosoftAuth.configure() first');
-      return null;
+      return {
+        device: null,
+        error: 'No Azure client id is configured. See docs/BUILD.md §7.'
+      };
     }
     const body: string =
       `client_id=${encodeURIComponent(MicrosoftAuth.clientId)}` +
       `&scope=${encodeURIComponent(MS_SCOPE)}`;
     const resp = await postForm(MS_DEVICE_CODE_URL, body);
     if (!resp.ok) {
+      const error: string = MicrosoftAuth.requestFailure(resp.code, resp.body);
       Logger.error(TAG, `device code request failed: HTTP ${resp.code} ${resp.body}`);
-      return null;
+      return { device: null, error: error };
     }
     const json: JsonObj | null = parseJson(resp.body);
     if (json === null) {
-      return null;
+      return { device: null, error: 'Microsoft returned an unreadable device-code response.' };
     }
-    return {
+    const device: DeviceCodeResponse = {
       deviceCode: getStr(json, 'device_code'),
       userCode: getStr(json, 'user_code'),
       verificationUri: getStr(json, 'verification_uri'),
       expiresInSeconds: getNum(json, 'expires_in', 900),
       pollingIntervalSeconds: getNum(json, 'interval', 5)
     };
+    if (device.deviceCode.length === 0 || device.userCode.length === 0) {
+      return { device: null, error: 'Microsoft returned an incomplete device code.' };
+    }
+    return { device: device, error: '' };
+  }
+
+  /** Turns transport/OAuth failures into messages suitable for the UI. */
+  private static requestFailure(code: number, body: string): string {
+    if (code === -1) {
+      return 'Network error: could not reach login.microsoftonline.com. ' +
+        'Check the connection and retry.';
+    }
+    return oauthErrorMessage(body, `Microsoft rejected the request (HTTP ${code}).`);
   }
 
   /**
@@ -103,6 +127,10 @@ export class MicrosoftAuth {
         `&client_id=${encodeURIComponent(MicrosoftAuth.clientId)}` +
         `&device_code=${encodeURIComponent(device.deviceCode)}`;
       const resp = await postForm(MS_TOKEN_URL, body);
+      if (resp.code === -1) {
+        report('error', MicrosoftAuth.requestFailure(resp.code, resp.body));
+        return null;
+      }
       const json: JsonObj | null = parseJson(resp.body);
       if (json === null) {
         report('error', 'Malformed token response');
@@ -117,7 +145,7 @@ export class MicrosoftAuth {
         continue;
       }
       if (err.length > 0) {
-        report('error', `Authorization failed: ${err}`);
+        report('error', oauthErrorMessage(resp.body, `Authorization failed: ${err}`));
         return null;
       }
       msAccessToken = getStr(json, 'access_token');
@@ -140,14 +168,17 @@ export class MicrosoftAuth {
       SiteName: 'user.auth.xboxlive.com',
       RpsTicket: `d=${msAccessToken}`
     };
-    const xblJson: JsonObj | null =
-      await MicrosoftAuth.xblRequest(XBL_AUTH_URL, xblProps, `d=${msAccessToken}`);
-    if (xblJson === null) {
-      report('error', 'Xbox Live authentication failed');
+    const xbl = await MicrosoftAuth.xblRequest(
+      XBL_AUTH_URL, xblProps, 'http://auth.xboxlive.com');
+    if (xbl.json === null) {
+      const reason: string = xboxErrorMessage(xbl.body);
+      report('error', reason.length > 0
+        ? reason
+        : `Xbox Live authentication failed (HTTP ${xbl.code}).`);
       return null;
     }
-    const xblToken: string = getStr(xblJson, 'Token');
-    const xblUhs: string = MicrosoftAuth.firstUserHash(xblJson);
+    const xblToken: string = getStr(xbl.json, 'Token');
+    const xblUhs: string = MicrosoftAuth.firstUserHash(xbl.json);
 
     // --- XSTS token (Minecraft relying party) ---
     report('exchanging_xbl', 'Requesting XSTS ticket…');
@@ -155,14 +186,17 @@ export class MicrosoftAuth {
       SandboxId: 'RETAIL',
       UserTokens: [xblToken]
     };
-    const xstsJson: JsonObj | null = await MicrosoftAuth.xblRequest(
-      XSTS_AUTH_URL, xstsProps, undefined, 'rp://api.minecraftservices.com/');
-    if (xstsJson === null) {
-      report('error', 'XSTS authorization failed (is your account an Xbox account?)');
+    const xsts = await MicrosoftAuth.xblRequest(
+      XSTS_AUTH_URL, xstsProps, 'rp://api.minecraftservices.com/');
+    if (xsts.json === null) {
+      const reason: string = xboxErrorMessage(xsts.body);
+      report('error', reason.length > 0
+        ? reason
+        : `XSTS authorization failed (HTTP ${xsts.code}; is this an Xbox account?)`);
       return null;
     }
-    const xstsToken: string = getStr(xstsJson, 'Token');
-    const xstsUhs: string = MicrosoftAuth.firstUserHash(xstsJson);
+    const xstsToken: string = getStr(xsts.json, 'Token');
+    const xstsUhs: string = MicrosoftAuth.firstUserHash(xsts.json);
     const uhs: string = xstsUhs.length > 0 ? xstsUhs : xblUhs;
 
     // --- Minecraft services access token ---
@@ -174,7 +208,15 @@ export class MicrosoftAuth {
     const mcResp = await postJson(MC_LOGIN_URL,
       JSON.stringify(loginPayload), acceptHeaders);
     if (!mcResp.ok) {
-      report('error', `Minecraft login failed: HTTP ${mcResp.code}`);
+      Logger.warn(TAG, `Minecraft login failed: HTTP ${mcResp.code} ${mcResp.body}`);
+      let hint: string = '';
+      if (mcResp.body.indexOf('Invalid app registration') >= 0) {
+        hint = ' — this Azure app is not approved for the Minecraft API; ' +
+          'request access at https://aka.ms/AppRegInfo';
+      } else if (mcResp.code === 401) {
+        hint = ' — the account may not own Minecraft: Java Edition';
+      }
+      report('error', `Minecraft login failed: HTTP ${mcResp.code}${hint}`);
       return null;
     }
     const mcJson: JsonObj | null = parseJson(mcResp.body);
@@ -237,30 +279,30 @@ export class MicrosoftAuth {
       SiteName: 'user.auth.xboxlive.com',
       RpsTicket: `d=${newAccess}`
     };
-    const xblJson: JsonObj | null =
-      await MicrosoftAuth.xblRequest(XBL_AUTH_URL, xblProps, `d=${newAccess}`);
-    if (xblJson === null) {
+    const xbl: TicketResponse =
+      await MicrosoftAuth.xblRequest(XBL_AUTH_URL, xblProps, 'http://auth.xboxlive.com');
+    if (xbl.json === null) {
       return null;
     }
     const xstsProps: TicketProperties = {
       SandboxId: 'RETAIL',
-      UserTokens: [getStr(xblJson, 'Token')]
+      UserTokens: [getStr(xbl.json, 'Token')]
     };
-    const xstsJson: JsonObj | null = await MicrosoftAuth.xblRequest(
-      XSTS_AUTH_URL, xstsProps, undefined, 'rp://api.minecraftservices.com/');
-    if (xstsJson === null) {
+    const xsts: TicketResponse = await MicrosoftAuth.xblRequest(
+      XSTS_AUTH_URL, xstsProps, 'rp://api.minecraftservices.com/');
+    if (xsts.json === null) {
       return null;
     }
-    let uhs: string = MicrosoftAuth.firstUserHash(xstsJson);
+    let uhs: string = MicrosoftAuth.firstUserHash(xsts.json);
     if (uhs.length === 0) {
-      uhs = MicrosoftAuth.firstUserHash(xblJson);
+      uhs = MicrosoftAuth.firstUserHash(xbl.json);
     }
     if (uhs.length === 0) {
       Logger.warn(TAG, 'refresh: no user hash in XBL/XSTS response');
       return null;
     }
     const loginPayload: Record<string, string> = {};
-    loginPayload['identityToken'] = `XBL3.0 x=${uhs};${getStr(xstsJson, 'Token')}`;
+    loginPayload['identityToken'] = `XBL3.0 x=${uhs};${getStr(xsts.json, 'Token')}`;
     const acceptHeaders: Record<string, string> = {};
     acceptHeaders['Accept'] = 'application/json';
     const mcResp = await postJson(MC_LOGIN_URL,
@@ -279,28 +321,29 @@ export class MicrosoftAuth {
     };
   }
 
-  /** Standard XBL/XSTS POST envelope shared by both ticket endpoints. */
+  /**
+   * Standard XBL/XSTS POST envelope. Xbox Live answers malformed envelopes
+   * with an empty HTTP 400, so the body must match the published schema:
+   * Properties + RelyingParty + TokenType, plus the contract-version header.
+   */
   private static async xblRequest(
     url: string,
     properties: TicketProperties,
-    rpsTicket: string | undefined,
-    relyingParty?: string
-  ): Promise<JsonObj | null> {
+    relyingParty: string
+  ): Promise<TicketResponse> {
     const payload: Record<string, Object> = {};
     payload['Properties'] = properties;
-    if (rpsTicket !== undefined) {
-      payload['RpsTicket'] = rpsTicket;
-    }
-    if (relyingParty !== undefined) {
-      payload['RelyingParty'] = relyingParty;
-    }
-    payload['Dependency'] = 'None';
-    const resp = await postJson(url, JSON.stringify(payload), { 'Accept': 'application/json' });
+    payload['RelyingParty'] = relyingParty;
+    payload['TokenType'] = 'JWT';
+    const headers: Record<string, string> = {};
+    headers['Accept'] = 'application/json';
+    headers['x-xbl-contract-version'] = '1';
+    const resp = await postJson(url, JSON.stringify(payload), headers);
     if (!resp.ok) {
       Logger.warn(TAG, `xbl request ${url} failed: HTTP ${resp.code} ${resp.body}`);
-      return null;
+      return { json: null, body: resp.body, code: resp.code };
     }
-    return parseJson(resp.body);
+    return { json: parseJson(resp.body), body: resp.body, code: resp.code };
   }
 
   private static firstUserHash(json: JsonObj): string {

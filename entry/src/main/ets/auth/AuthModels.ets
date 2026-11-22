@@ -60,6 +60,12 @@ export interface DeviceCodeResponse {
   pollingIntervalSeconds: number;
 }
 
+/** Device-code request outcome; on failure `device` is null and `error` explains why. */
+export interface DeviceFlowStart {
+  device: DeviceCodeResponse | null;
+  error: string;
+}
+
 /** Terminal state of a device-code login attempt. */
 export type AuthPhase =
   | 'idle'

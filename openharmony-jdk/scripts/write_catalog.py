@@ -6,7 +6,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Writes the runtime-catalog entry for a packaged x86_64 runtime zip."""
+"""Writes the runtime-catalog entry for a packaged x86_64/aarch64 runtime zip."""
 
 import argparse
 import hashlib
@@ -17,23 +17,25 @@ import pathlib
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--major", required=True, choices=["21", "25"])
+    parser.add_argument("--arch", required=True, choices=["x86_64", "aarch64"])
     parser.add_argument("--zip", required=True, type=pathlib.Path)
     parser.add_argument("--out", required=True, type=pathlib.Path)
     parser.add_argument("--url", default="")
     args = parser.parse_args()
 
     data = args.zip.read_bytes()
+    abi = "x86_64" if args.arch == "x86_64" else "arm64-v8a"
     entry = {
-        "name": f"jre{args.major}-ohos-x86_64",
+        "name": f"jre{args.major}-ohos-{args.arch}",
         "javaMajor": int(args.major),
-        "abi": "x86_64",
+        "abi": abi,
         "packUrl": args.url,
         "sha256": hashlib.sha256(data).hexdigest(),
         "sizeBytes": len(data),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps([entry], indent=2) + "\n", encoding="utf-8")
-    (args.out.parent / f"jre{args.major}-ohos-x86_64.sha256").write_text(
+    (args.out.parent / f"jre{args.major}-ohos-{args.arch}.sha256").write_text(
         f"{entry['sha256']}  {args.zip.name}\n", encoding="utf-8")
     print(json.dumps(entry, indent=2))
     return 0

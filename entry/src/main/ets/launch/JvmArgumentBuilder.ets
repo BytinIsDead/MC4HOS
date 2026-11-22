@@ -218,10 +218,13 @@ export class JvmArgumentBuilder {
   }
 
   private buildNativesDirs(): string {
-    const dirs: Array<string> = [this.ctx.nativesDir];
+    // The HAP's lib dir must come first: HarmonyOS only dlopens libraries
+    // packaged there, including the JRE's own natives.
+    const dirs: Array<string> = [];
     if (Paths.hapNativeLibraryDir().length > 0) {
       dirs.push(Paths.hapNativeLibraryDir());
     }
+    dirs.push(this.ctx.nativesDir);
     // Runtime layout differs between JDK8 (lib/<arch>/) and modern JDKs
     // (lib/server/); the manager only returns directories that exist.
     for (const dir of JavaRuntimeManager.nativeLibraryDirs(this.ctx.javaHome)) {

@@ -24,9 +24,9 @@ because each one broke a real build.
 2. **Clean-room**: no proprietary code, no decompiled game code, no game
    assets, no PojavLauncher-derived sources. Implement from public
    documentation only.
-3. **No secrets**: no Microsoft client ids, certificates, or account data.
-   Each distributor registers their own Azure application
-   (docs/BUILD.md §7).
+3. **No secrets**: no client secrets, certificates, tokens or account data.
+   The Microsoft OAuth *public client* id (`AZURE_CLIENT_ID`) is not a
+   secret and is compiled in; never add a client secret (docs/BUILD.md §7).
 
 ## AI-assisted contributions
 

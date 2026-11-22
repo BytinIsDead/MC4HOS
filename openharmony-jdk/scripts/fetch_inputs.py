@@ -10,7 +10,7 @@
 
 The archive is third-party GPLv2+CE material (patches and stubs) and is never
 committed to this repository. Its SHA-256 and size are pinned in
-openharmony-jdk/build-inputs.lock.json.
+build-inputs.lock.json.
 """
 
 import argparse

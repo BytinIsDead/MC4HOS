@@ -23,12 +23,13 @@
  * ABI safety: the JNIEnv/JavaVM dispatch tables are arrays of uniformly
  * sized function pointers, so unused slots are declared as opaque `void*`
  * placeholders annotated with their documented names. Slot ORDER follows
- * the JNI specification exactly — anchors: FindClass=6, GetObjectClass=31,
+ * jni.h (JDK 21) exactly — anchors: FindClass=6, GetObjectClass=31,
  * GetMethodID=33, instance call family 34-63, nonvirtual family 64-93,
- * instance fields 94-111, GetStaticMethodID=112, static call family 113-142,
- * static fields 143-161, strings 162-169, object arrays 170-173, primitive
- * arrays 174-213, RegisterNatives=214, GetJavaVM=218, ExceptionCheck=227,
- * GetObjectRefType=231 (232 slots, JNI 1.6 table).
+ * GetFieldID=94, instance fields 95-112, GetStaticMethodID=113,
+ * static call family 114-143, static fields 144-162, strings 163-170,
+ * object arrays 171-174, primitive arrays 175-214, RegisterNatives=215,
+ * GetJavaVM=219, ExceptionCheck=228, GetObjectRefType=232, GetModule=233,
+ * IsVirtualThread=234 (235 slots).
  *
  * LP64 targets (aarch64-linux-ohos, x86_64-linux-ohos): fixed-width integer
  * types match the JNI ABI (jint = 32-bit, jlong = 64-bit).
@@ -109,272 +110,252 @@ class JavaVM;
 // -------------------------------------------------------------------------
 
 struct JNINativeInterface {
-    void *reserved0;                                   // 0
-    void *reserved1;                                   // 1
-    void *reserved2;                                   // 2
-    void *reserved3;                                   // 3
-
-    jint (*GetVersion)(JNIEnv *env);                   // 4
-    void *DefineClass;                                 // 5
-    jclass (*FindClass)(JNIEnv *env, const char *name);// 6
-    void *FromReflectedMethod;                         // 7
-    void *FromReflectedField;                          // 8
-    void *ToReflectedMethod;                           // 9
-    void *GetSuperclass;                               // 10
-    void *IsAssignableFrom;                            // 11
-    void *ToReflectedField;                            // 12
-    void *Throw;                                       // 13
-    void *ThrowNew;                                    // 14
-    jthrowable (*ExceptionOccurred)(JNIEnv *env);      // 15
-    void *ExceptionDescribe;                           // 16
-    void (*ExceptionClear)(JNIEnv *env);               // 17
-    void *FatalError;                                  // 18
-    void *PushLocalFrame;                              // 19
-    void *PopLocalFrame;                               // 20
-    void *NewGlobalRef;                                // 21
-    void *DeleteGlobalRef;                             // 22
-    void (*DeleteLocalRef)(JNIEnv *env, jobject obj);  // 23
-    void *IsSameObject;                                // 24
-    void *NewLocalRef;                                 // 25
-    void *EnsureLocalCapacity;                         // 26
-    void *AllocObject;                                 // 27
-    void *NewObject;                                   // 28
-    void *NewObjectV;                                  // 29
-    void *NewObjectA;                                  // 30
-    jclass (*GetObjectClass)(JNIEnv *env, jobject obj);// 31
-    void *IsInstanceOf;                                // 32
+    void *reserved0;                                                        // 0
+    void *reserved1;                                                        // 1
+    void *reserved2;                                                        // 2
+    void *reserved3;                                                        // 3
+    jint (*GetVersion)(JNIEnv *env);                                        // 4
+    void *DefineClass;                                                      // 5
+    jclass (*FindClass)(JNIEnv *env, const char *name);                     // 6
+    void *FromReflectedMethod;                                              // 7
+    void *FromReflectedField;                                               // 8
+    void *ToReflectedMethod;                                                // 9
+    void *GetSuperclass;                                                    // 10
+    void *IsAssignableFrom;                                                 // 11
+    void *ToReflectedField;                                                 // 12
+    void *Throw;                                                            // 13
+    void *ThrowNew;                                                         // 14
+    jthrowable (*ExceptionOccurred)(JNIEnv *env);                           // 15
+    void *ExceptionDescribe;                                                // 16
+    void (*ExceptionClear)(JNIEnv *env);                                    // 17
+    void *FatalError;                                                       // 18
+    void *PushLocalFrame;                                                   // 19
+    void *PopLocalFrame;                                                    // 20
+    void *NewGlobalRef;                                                     // 21
+    void *DeleteGlobalRef;                                                  // 22
+    void (*DeleteLocalRef)(JNIEnv *env, jobject obj);                       // 23
+    void *IsSameObject;                                                     // 24
+    void *NewLocalRef;                                                      // 25
+    void *EnsureLocalCapacity;                                              // 26
+    void *AllocObject;                                                      // 27
+    void *NewObject;                                                        // 28
+    void *NewObjectV;                                                       // 29
+    void *NewObjectA;                                                       // 30
+    jclass (*GetObjectClass)(JNIEnv *env, jobject obj);                     // 31
+    void *IsInstanceOf;                                                     // 32
     jmethodID (*GetMethodID)(JNIEnv *env, jclass cls, const char *name,
-                             const char *sig);         // 33
-
-    // 34..63 — instance method call families (Object, Boolean, Byte, Char,
-    // Short, Int, Long, Float, Double, Void; plain / va_list / jvalue*).
-    // Only the Object trio is typed: ReportException() calls it.
+                              const char *sig);         // 33
     jobject (*CallObjectMethod)(JNIEnv *env, jobject obj, jmethodID methodID,
-                                ...);                  // 34
+                                 ...);                  // 34
     jobject (*CallObjectMethodV)(JNIEnv *env, jobject obj, jmethodID methodID,
-                                 va_list args);        // 35
+                                  va_list args);        // 35
     jobject (*CallObjectMethodA)(JNIEnv *env, jobject obj, jmethodID methodID,
-                                 const jvalue *args);  // 36
-    void *CallBooleanMethod;                           // 37
-    void *CallBooleanMethodV;                          // 38
-    void *CallBooleanMethodA;                          // 39
-    void *CallByteMethod;                              // 40
-    void *CallByteMethodV;                             // 41
-    void *CallByteMethodA;                             // 42
-    void *CallCharMethod;                              // 43
-    void *CallCharMethodV;                             // 44
-    void *CallCharMethodA;                             // 45
-    void *CallShortMethod;                             // 46
-    void *CallShortMethodV;                            // 47
-    void *CallShortMethodA;                            // 48
-    void *CallIntMethod;                               // 49
-    void *CallIntMethodV;                              // 50
-    void *CallIntMethodA;                              // 51
-    void *CallLongMethod;                              // 52
-    void *CallLongMethodV;                             // 53
-    void *CallLongMethodA;                             // 54
-    void *CallFloatMethod;                             // 55
-    void *CallFloatMethodV;                            // 56
-    void *CallFloatMethodA;                            // 57
-    void *CallDoubleMethod;                            // 58
-    void *CallDoubleMethodV;                           // 59
-    void *CallDoubleMethodA;                           // 60
-    void *CallVoidMethod;                              // 61
-    void *CallVoidMethodV;                             // 62
-    void *CallVoidMethodA;                             // 63
-
-    // 64..93 — CallNonvirtual<Primitive>Method / V / A families
-    void *CallNonvirtualObjectMethod;                  // 64
-    void *CallNonvirtualObjectMethodV;                 // 65
-    void *CallNonvirtualObjectMethodA;                 // 66
-    void *CallNonvirtualBooleanMethod;                 // 67
-    void *CallNonvirtualBooleanMethodV;                // 68
-    void *CallNonvirtualBooleanMethodA;                // 69
-    void *CallNonvirtualByteMethod;                    // 70
-    void *CallNonvirtualByteMethodV;                   // 71
-    void *CallNonvirtualByteMethodA;                   // 72
-    void *CallNonvirtualCharMethod;                    // 73
-    void *CallNonvirtualCharMethodV;                   // 74
-    void *CallNonvirtualCharMethodA;                   // 75
-    void *CallNonvirtualShortMethod;                   // 76
-    void *CallNonvirtualShortMethodV;                  // 77
-    void *CallNonvirtualShortMethodA;                  // 78
-    void *CallNonvirtualIntMethod;                     // 79
-    void *CallNonvirtualIntMethodV;                    // 80
-    void *CallNonvirtualIntMethodA;                    // 81
-    void *CallNonvirtualLongMethod;                    // 82
-    void *CallNonvirtualLongMethodV;                   // 83
-    void *CallNonvirtualLongMethodA;                   // 84
-    void *CallNonvirtualFloatMethod;                   // 85
-    void *CallNonvirtualFloatMethodV;                  // 86
-    void *CallNonvirtualFloatMethodA;                  // 87
-    void *CallNonvirtualDoubleMethod;                  // 88
-    void *CallNonvirtualDoubleMethodV;                 // 89
-    void *CallNonvirtualDoubleMethodA;                 // 90
-    void *CallNonvirtualVoidMethod;                    // 91
-    void *CallNonvirtualVoidMethodV;                   // 92
-    void *CallNonvirtualVoidMethodA;                   // 93
-
-    // 94..102 — instance field getters (Object, Boolean, Byte, Char, Short,
-    // Int, Long, Float, Double)
-    void *GetObjectField;                              // 94
-    void *GetBooleanField;                             // 95
-    void *GetByteField;                                // 96
-    void *GetCharField;                                // 97
-    void *GetShortField;                               // 98
-    void *GetIntField;                                 // 99
-    void *GetLongField;                                // 100
-    void *GetFloatField;                               // 101
-    void *GetDoubleField;                              // 102
-    // 103..111 — instance field setters
-    void *SetObjectField;                              // 103
-    void *SetBooleanField;                             // 104
-    void *SetByteField;                                // 105
-    void *SetCharField;                                // 106
-    void *SetShortField;                               // 107
-    void *SetIntField;                                 // 108
-    void *SetLongField;                                // 109
-    void *SetFloatField;                               // 110
-    void *SetDoubleField;                              // 111
-
+                                  const jvalue *args);  // 36
+    void *CallBooleanMethod;                                                // 37
+    void *CallBooleanMethodV;                                               // 38
+    void *CallBooleanMethodA;                                               // 39
+    void *CallByteMethod;                                                   // 40
+    void *CallByteMethodV;                                                  // 41
+    void *CallByteMethodA;                                                  // 42
+    void *CallCharMethod;                                                   // 43
+    void *CallCharMethodV;                                                  // 44
+    void *CallCharMethodA;                                                  // 45
+    void *CallShortMethod;                                                  // 46
+    void *CallShortMethodV;                                                 // 47
+    void *CallShortMethodA;                                                 // 48
+    void *CallIntMethod;                                                    // 49
+    void *CallIntMethodV;                                                   // 50
+    void *CallIntMethodA;                                                   // 51
+    void *CallLongMethod;                                                   // 52
+    void *CallLongMethodV;                                                  // 53
+    void *CallLongMethodA;                                                  // 54
+    void *CallFloatMethod;                                                  // 55
+    void *CallFloatMethodV;                                                 // 56
+    void *CallFloatMethodA;                                                 // 57
+    void *CallDoubleMethod;                                                 // 58
+    void *CallDoubleMethodV;                                                // 59
+    void *CallDoubleMethodA;                                                // 60
+    void *CallVoidMethod;                                                   // 61
+    void *CallVoidMethodV;                                                  // 62
+    void *CallVoidMethodA;                                                  // 63
+    void *CallNonvirtualObjectMethod;                                       // 64
+    void *CallNonvirtualObjectMethodV;                                      // 65
+    void *CallNonvirtualObjectMethodA;                                      // 66
+    void *CallNonvirtualBooleanMethod;                                      // 67
+    void *CallNonvirtualBooleanMethodV;                                     // 68
+    void *CallNonvirtualBooleanMethodA;                                     // 69
+    void *CallNonvirtualByteMethod;                                         // 70
+    void *CallNonvirtualByteMethodV;                                        // 71
+    void *CallNonvirtualByteMethodA;                                        // 72
+    void *CallNonvirtualCharMethod;                                         // 73
+    void *CallNonvirtualCharMethodV;                                        // 74
+    void *CallNonvirtualCharMethodA;                                        // 75
+    void *CallNonvirtualShortMethod;                                        // 76
+    void *CallNonvirtualShortMethodV;                                       // 77
+    void *CallNonvirtualShortMethodA;                                       // 78
+    void *CallNonvirtualIntMethod;                                          // 79
+    void *CallNonvirtualIntMethodV;                                         // 80
+    void *CallNonvirtualIntMethodA;                                         // 81
+    void *CallNonvirtualLongMethod;                                         // 82
+    void *CallNonvirtualLongMethodV;                                        // 83
+    void *CallNonvirtualLongMethodA;                                        // 84
+    void *CallNonvirtualFloatMethod;                                        // 85
+    void *CallNonvirtualFloatMethodV;                                       // 86
+    void *CallNonvirtualFloatMethodA;                                       // 87
+    void *CallNonvirtualDoubleMethod;                                       // 88
+    void *CallNonvirtualDoubleMethodV;                                      // 89
+    void *CallNonvirtualDoubleMethodA;                                      // 90
+    void *CallNonvirtualVoidMethod;                                         // 91
+    void *CallNonvirtualVoidMethodV;                                        // 92
+    void *CallNonvirtualVoidMethodA;                                        // 93
+    void *GetFieldID;                                                       // 94
+    void *GetObjectField;                                                   // 95
+    void *GetBooleanField;                                                  // 96
+    void *GetByteField;                                                     // 97
+    void *GetCharField;                                                     // 98
+    void *GetShortField;                                                    // 99
+    void *GetIntField;                                                      // 100
+    void *GetLongField;                                                     // 101
+    void *GetFloatField;                                                    // 102
+    void *GetDoubleField;                                                   // 103
+    void *SetObjectField;                                                   // 104
+    void *SetBooleanField;                                                  // 105
+    void *SetByteField;                                                     // 106
+    void *SetCharField;                                                     // 107
+    void *SetShortField;                                                    // 108
+    void *SetIntField;                                                      // 109
+    void *SetLongField;                                                     // 110
+    void *SetFloatField;                                                    // 111
+    void *SetDoubleField;                                                   // 112
     jmethodID (*GetStaticMethodID)(JNIEnv *env, jclass cls, const char *name,
-                                   const char *sig);   // 112
-    // 113..142 — CallStatic<Primitive>Method / V / A families. Only the
-    // Void trio is typed: the launcher invokes main() through it.
-    void *CallStaticObjectMethod;                      // 113
-    void *CallStaticObjectMethodV;                     // 114
-    void *CallStaticObjectMethodA;                     // 115
-    void *CallStaticBooleanMethod;                     // 116
-    void *CallStaticBooleanMethodV;                    // 117
-    void *CallStaticBooleanMethodA;                    // 118
-    void *CallStaticByteMethod;                        // 119
-    void *CallStaticByteMethodV;                       // 120
-    void *CallStaticByteMethodA;                       // 121
-    void *CallStaticCharMethod;                        // 122
-    void *CallStaticCharMethodV;                       // 123
-    void *CallStaticCharMethodA;                       // 124
-    void *CallStaticShortMethod;                       // 125
-    void *CallStaticShortMethodV;                      // 126
-    void *CallStaticShortMethodA;                      // 127
-    void *CallStaticIntMethod;                         // 128
-    void *CallStaticIntMethodV;                        // 129
-    void *CallStaticIntMethodA;                        // 130
-    void *CallStaticLongMethod;                        // 131
-    void *CallStaticLongMethodV;                       // 132
-    void *CallStaticLongMethodA;                       // 133
-    void *CallStaticFloatMethod;                       // 134
-    void *CallStaticFloatMethodV;                      // 135
-    void *CallStaticFloatMethodA;                      // 136
-    void *CallStaticDoubleMethod;                      // 137
-    void *CallStaticDoubleMethodV;                     // 138
-    void *CallStaticDoubleMethodA;                     // 139
-    void *CallStaticVoidMethod;                        // 140
-    void *CallStaticVoidMethodV;                       // 141
+                                   const char *sig);    // 113
+    void *CallStaticObjectMethod;                                           // 114
+    void *CallStaticObjectMethodV;                                          // 115
+    void *CallStaticObjectMethodA;                                          // 116
+    void *CallStaticBooleanMethod;                                          // 117
+    void *CallStaticBooleanMethodV;                                         // 118
+    void *CallStaticBooleanMethodA;                                         // 119
+    void *CallStaticByteMethod;                                             // 120
+    void *CallStaticByteMethodV;                                            // 121
+    void *CallStaticByteMethodA;                                            // 122
+    void *CallStaticCharMethod;                                             // 123
+    void *CallStaticCharMethodV;                                            // 124
+    void *CallStaticCharMethodA;                                            // 125
+    void *CallStaticShortMethod;                                            // 126
+    void *CallStaticShortMethodV;                                           // 127
+    void *CallStaticShortMethodA;                                           // 128
+    void *CallStaticIntMethod;                                              // 129
+    void *CallStaticIntMethodV;                                             // 130
+    jint (*CallStaticIntMethodA)(JNIEnv *env, jclass cls, jmethodID methodID,
+                                  const jvalue *args);  // 131
+    void *CallStaticLongMethod;                                             // 132
+    void *CallStaticLongMethodV;                                            // 133
+    void *CallStaticLongMethodA;                                            // 134
+    void *CallStaticFloatMethod;                                            // 135
+    void *CallStaticFloatMethodV;                                           // 136
+    void *CallStaticFloatMethodA;                                           // 137
+    void *CallStaticDoubleMethod;                                           // 138
+    void *CallStaticDoubleMethodV;                                          // 139
+    void *CallStaticDoubleMethodA;                                          // 140
+    void *CallStaticVoidMethod;                                             // 141
+    void *CallStaticVoidMethodV;                                            // 142
     void (*CallStaticVoidMethodA)(JNIEnv *env, jclass cls, jmethodID methodID,
-                                  const jvalue *args); // 142
-
-    // 143 — static field id lookup
-    void *GetStaticFieldID;                            // 143
-    // 144..161 — static field accessors (9 getters, 9 setters)
-    void *GetStaticObjectField;                        // 144
-    void *GetStaticBooleanField;                       // 145
-    void *GetStaticByteField;                          // 146
-    void *GetStaticCharField;                          // 147
-    void *GetStaticShortField;                         // 148
-    void *GetStaticIntField;                           // 149
-    void *GetStaticLongField;                          // 150
-    void *GetStaticFloatField;                         // 151
-    void *GetStaticDoubleField;                        // 152
-    void *SetStaticObjectField;                        // 153
-    void *SetStaticBooleanField;                       // 154
-    void *SetStaticByteField;                          // 155
-    void *SetStaticCharField;                          // 156
-    void *SetStaticShortField;                         // 157
-    void *SetStaticIntField;                           // 158
-    void *SetStaticLongField;                          // 159
-    void *SetStaticFloatField;                         // 160
-    void *SetStaticDoubleField;                        // 161
-
-    // 162..169 — string creation/locking; the UTF trio is typed
-    void *NewString;                                   // 162
-    void *GetStringLength;                             // 163
-    void *GetStringChars;                              // 164
-    void *ReleaseStringChars;                          // 165
-    jstring (*NewStringUTF)(JNIEnv *env, const char *utf);            // 166
-    void *GetStringUTFLength;                          // 167
+                                   const jvalue *args); // 143
+    void *GetStaticFieldID;                                                 // 144
+    void *GetStaticObjectField;                                             // 145
+    void *GetStaticBooleanField;                                            // 146
+    void *GetStaticByteField;                                               // 147
+    void *GetStaticCharField;                                               // 148
+    void *GetStaticShortField;                                              // 149
+    void *GetStaticIntField;                                                // 150
+    void *GetStaticLongField;                                               // 151
+    void *GetStaticFloatField;                                              // 152
+    void *GetStaticDoubleField;                                             // 153
+    void *SetStaticObjectField;                                             // 154
+    void *SetStaticBooleanField;                                            // 155
+    void *SetStaticByteField;                                               // 156
+    void *SetStaticCharField;                                               // 157
+    void *SetStaticShortField;                                              // 158
+    void *SetStaticIntField;                                                // 159
+    void *SetStaticLongField;                                               // 160
+    void *SetStaticFloatField;                                              // 161
+    void *SetStaticDoubleField;                                             // 162
+    void *NewString;                                                        // 163
+    void *GetStringLength;                                                  // 164
+    void *GetStringChars;                                                   // 165
+    void *ReleaseStringChars;                                               // 166
+    jstring (*NewStringUTF)(JNIEnv *env, const char *utf);                  // 167
+    void *GetStringUTFLength;                                               // 168
     const char *(*GetStringUTFChars)(JNIEnv *env, jstring str,
-                                     jboolean *isCopy);// 168
+                                         jboolean *isCopy);// 169
     void (*ReleaseStringUTFChars)(JNIEnv *env, jstring str,
-                                  const char *chars);  // 169
-
-    // 170..173 — object arrays; New/Set used to assemble main(String[])
-    void *GetArrayLength;                              // 170
+                                      const char *chars);// 170
+    void *GetArrayLength;                                                   // 171
     jobjectArray (*NewObjectArray)(JNIEnv *env, jsize len, jclass cls,
-                                   jobject init);      // 171
-    void *GetObjectArrayElement;                       // 172
+                                      jobject init);    // 172
+    void *GetObjectArrayElement;                                            // 173
     void (*SetObjectArrayElement)(JNIEnv *env, jobjectArray array,
-                                  jsize index, jobject value); // 173
-
-    // 174..213 — primitive array constructors and element access
-    void *NewBooleanArray;                             // 174
-    void *NewByteArray;                                // 175
-    void *NewCharArray;                                // 176
-    void *NewShortArray;                               // 177
-    void *NewIntArray;                                 // 178
-    void *NewLongArray;                                // 179
-    void *NewFloatArray;                               // 180
-    void *NewDoubleArray;                              // 181
-    void *GetBooleanArrayElements;                     // 182
-    void *GetByteArrayElements;                        // 183
-    void *GetCharArrayElements;                        // 184
-    void *GetShortArrayElements;                       // 185
-    void *GetIntArrayElements;                         // 186
-    void *GetLongArrayElements;                        // 187
-    void *GetFloatArrayElements;                       // 188
-    void *GetDoubleArrayElements;                      // 189
-    void *ReleaseBooleanArrayElements;                 // 190
-    void *ReleaseByteArrayElements;                    // 191
-    void *ReleaseCharArrayElements;                    // 192
-    void *ReleaseShortArrayElements;                   // 193
-    void *ReleaseIntArrayElements;                     // 194
-    void *ReleaseLongArrayElements;                    // 195
-    void *ReleaseFloatArrayElements;                   // 196
-    void *ReleaseDoubleArrayElements;                  // 197
-    void *GetBooleanArrayRegion;                       // 198
-    void *GetByteArrayRegion;                          // 199
-    void *GetCharArrayRegion;                          // 200
-    void *GetShortArrayRegion;                         // 201
-    void *GetIntArrayRegion;                           // 202
-    void *GetLongArrayRegion;                          // 203
-    void *GetFloatArrayRegion;                         // 204
-    void *GetDoubleArrayRegion;                        // 205
-    void *SetBooleanArrayRegion;                       // 206
-    void *SetByteArrayRegion;                          // 207
-    void *SetCharArrayRegion;                          // 208
-    void *SetShortArrayRegion;                         // 209
-    void *SetIntArrayRegion;                           // 210
-    void *SetLongArrayRegion;                          // 211
-    void *SetFloatArrayRegion;                         // 212
-    void *SetDoubleArrayRegion;                        // 213
-
-    void *RegisterNatives;                             // 214
-    void *UnregisterNatives;                           // 215
-    void *MonitorEnter;                                // 216
-    void *MonitorExit;                                 // 217
-    void *GetJavaVM;                                   // 218
-    void *GetStringRegion;                             // 219
-    void *GetStringUTFRegion;                          // 220
-    void *GetPrimitiveArrayCritical;                   // 221
-    void *ReleasePrimitiveArrayCritical;               // 222
-    void *GetStringCritical;                           // 223
-    void *ReleaseStringCritical;                       // 224
-    void *NewWeakGlobalRef;                            // 225
-    void *DeleteWeakGlobalRef;                         // 226
-    jboolean (*ExceptionCheck)(JNIEnv *env);           // 227
-    void *NewDirectByteBuffer;                         // 228
-    void *GetDirectBufferAddress;                      // 229
-    void *GetDirectBufferCapacity;                     // 230
-    void *GetObjectRefType;                            // 231
+                                     jsize index, jobject value);// 174
+    void *NewBooleanArray;                                                  // 175
+    void *NewByteArray;                                                     // 176
+    void *NewCharArray;                                                     // 177
+    void *NewShortArray;                                                    // 178
+    void *NewIntArray;                                                      // 179
+    void *NewLongArray;                                                     // 180
+    void *NewFloatArray;                                                    // 181
+    void *NewDoubleArray;                                                   // 182
+    void *GetBooleanArrayElements;                                          // 183
+    void *GetByteArrayElements;                                             // 184
+    void *GetCharArrayElements;                                             // 185
+    void *GetShortArrayElements;                                            // 186
+    void *GetIntArrayElements;                                              // 187
+    void *GetLongArrayElements;                                             // 188
+    void *GetFloatArrayElements;                                            // 189
+    void *GetDoubleArrayElements;                                           // 190
+    void *ReleaseBooleanArrayElements;                                      // 191
+    void *ReleaseByteArrayElements;                                         // 192
+    void *ReleaseCharArrayElements;                                         // 193
+    void *ReleaseShortArrayElements;                                        // 194
+    void *ReleaseIntArrayElements;                                          // 195
+    void *ReleaseLongArrayElements;                                         // 196
+    void *ReleaseFloatArrayElements;                                        // 197
+    void *ReleaseDoubleArrayElements;                                       // 198
+    void *GetBooleanArrayRegion;                                            // 199
+    void *GetByteArrayRegion;                                               // 200
+    void *GetCharArrayRegion;                                               // 201
+    void *GetShortArrayRegion;                                              // 202
+    void *GetIntArrayRegion;                                                // 203
+    void *GetLongArrayRegion;                                               // 204
+    void *GetFloatArrayRegion;                                              // 205
+    void *GetDoubleArrayRegion;                                             // 206
+    void *SetBooleanArrayRegion;                                            // 207
+    void *SetByteArrayRegion;                                               // 208
+    void *SetCharArrayRegion;                                               // 209
+    void *SetShortArrayRegion;                                              // 210
+    void *SetIntArrayRegion;                                                // 211
+    void *SetLongArrayRegion;                                               // 212
+    void *SetFloatArrayRegion;                                              // 213
+    void *SetDoubleArrayRegion;                                             // 214
+    void *RegisterNatives;                                                  // 215
+    void *UnregisterNatives;                                                // 216
+    void *MonitorEnter;                                                     // 217
+    void *MonitorExit;                                                      // 218
+    void *GetJavaVM;                                                        // 219
+    void *GetStringRegion;                                                  // 220
+    void *GetStringUTFRegion;                                               // 221
+    void *GetPrimitiveArrayCritical;                                        // 222
+    void *ReleasePrimitiveArrayCritical;                                    // 223
+    void *GetStringCritical;                                                // 224
+    void *ReleaseStringCritical;                                            // 225
+    void *NewWeakGlobalRef;                                                 // 226
+    void *DeleteWeakGlobalRef;                                              // 227
+    jboolean (*ExceptionCheck)(JNIEnv *env);                                // 228
+    void *NewDirectByteBuffer;                                              // 229
+    void *GetDirectBufferAddress;                                           // 230
+    void *GetDirectBufferCapacity;                                          // 231
+    void *GetObjectRefType;                                                 // 232
+    void *GetModule;                                                        // 233
+    void *IsVirtualThread;                                                  // 234
 };
 
 // -------------------------------------------------------------------------
@@ -438,6 +419,10 @@ public:
     void CallStaticVoidMethodA(jclass cls, jmethodID methodID,
                                const jvalue *args) {
         functions->CallStaticVoidMethodA(this, cls, methodID, args);
+    }
+    jint CallStaticIntMethodA(jclass cls, jmethodID methodID,
+                              const jvalue *args) {
+        return functions->CallStaticIntMethodA(this, cls, methodID, args);
     }
     jstring NewStringUTF(const char *utf) {
         return functions->NewStringUTF(this, utf);

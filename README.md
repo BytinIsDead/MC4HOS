@@ -17,11 +17,12 @@ XComponent surfaces. Both 64-bit ABIs are supported: **arm64-v8a**
 (phones/tablets) and **x86_64** (Intel 2-in-1s and the OpenHarmony
 emulator); the OHOS NDK has no 32-bit x86 ABI and the JVM needs 64-bit
 anyway. aarch64 runtimes use pinned public OHOS OpenJDK builds; the
-x86_64 runtime is cross-compiled by the separate tree in
-[`openharmony-jdk/`](openharmony-jdk/README.md) and its GitHub Actions
-workflow. The build scripts fetch the runtime packs and bundle them inside
-the HAP, so phones/tablets can launch offline after install; the app falls
-back to downloading a pack when the required major/ABI is not bundled.
+x86_64 runtime is cross-compiled by the separate
+[`openharmony-openjdk`](https://github.com/BytinIsDead/openharmony-openjdk)
+repository and its GitHub Actions workflow, which builds both ABIs. The build
+scripts fetch the runtime packs and bundle them inside the HAP, so
+phones/tablets can launch offline after install; the app falls back to
+downloading a pack when the required major/ABI is not bundled.
 
 **License: MPL-2.0** (see [LICENSE](LICENSE)). Every source file carries the
 standard Exhibit-A notice. This project contains no third-party proprietary
@@ -52,7 +53,7 @@ trademark and third-party component obligations.
                                     │ JNI (in-process)
 ┌───────────────────────────────────▼───────────────────────────────────────────┐
 │  Embedded OpenHarmony OpenJDK (aarch64 / x86_64) — aarch64 packs ship         │
-│  inside the HAP, x86_64 packs are built in openharmony-jdk/ (NATIVES.md)      │
+│  inside the HAP, x86_64 packs come from openharmony-openjdk (NATIVES.md)      │
 │  + mc4hos-bridge.jar (org.mc4hos.bridge.*) + OpenHarmony-built LWJGL/OpenAL   │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -73,7 +74,7 @@ trademark and third-party component obligations.
 | Dual-ABI build (arm64-v8a + x86_64), per-ABI runtime packs & natives | ✅ implemented |
 | Android-style JDK/JRE import from a `.zip` (system file picker, ABI + version validation) | ✅ implemented |
 | aarch64 OpenHarmony OpenJDK 8/17/21/25 runtimes | ✅ bundled into the HAP (fetched at build time, SHA-256 pinned) |
-| x86_64 OpenHarmony OpenJDK 21/25 runtime build | ✅ separate `openharmony-jdk/` tree + CI workflow; bundled once published, otherwise downloaded/imported |
+| x86_64 OpenHarmony OpenJDK 21/25 runtimes | ✅ built by the separate `openharmony-openjdk` repo (combined x86_64/aarch64 workflow); published as `jdk-ohos-v1`, bundled into the HAP |
 | LWJGL / OpenAL / GLFW-shim binaries | 🔶 pipeline documented in [docs/NATIVES.md](docs/NATIVES.md); build them from upstream sources |
 | Desktop-GL translation (gl4es-class) | 🔶 optional component, MIT-licensed upstream |
 
@@ -85,9 +86,9 @@ pristine sources.
 
 ```
 AppScope/                    app-level config (bundleName, icon, label)
-openharmony-jdk/             separate x86_64 OpenJDK cross-build tree (21/25)
+openharmony-jdk/             reference copy of the dual-ABI build tree (canonical:
+                             github.com/BytinIsDead/openharmony-openjdk)
 .github/workflows/ci.yml     unsigned HAP build
-.github/workflows/jdk-x86_64.yml  x86_64 runtime build/release
 docs/BUILD.md                step-by-step build + integration (API 24)
 docs/NATIVES.md              runtime/native production pipeline
 scripts/bundled-jres.lock.json  runtime packs fetched and bundled into the HAP
@@ -139,10 +140,11 @@ Full walkthrough incl. self-test mode, account setup, runtime deployment:
   public, login-free community mirror pinned to an immutable revision, fetches
   the bundled runtime packs, runs `ohpm install` + `hvigorw assembleHap`, and
   uploads the unsigned HAP as an artifact. Details: docs/BUILD.md §10.
-- **x86_64 Java runtime** is built by `.github/workflows/jdk-x86_64.yml`
-  from the separate `openharmony-jdk/` tree. Manual dispatch with
-  `publish = true` publishes `jre21/25-ohos-x86_64.zip` plus a checksummed
-  catalog to the `jdk-x86_64-v1` release; without publishing, the zips are
+- **x86_64 Java runtime** is built by the separate
+  [`openharmony-openjdk`](https://github.com/BytinIsDead/openharmony-openjdk)
+  repository (`jdk-ohos.yml`, which also builds aarch64 packs). Manual
+  dispatch with `publish = true` publishes the zips plus a checksummed
+  catalog to its `jdk-ohos-v1` release; without publishing, the zips are
   ordinary workflow artifacts for `hdc` import. Build inputs are pinned by
   SHA-256 and are never committed (GPLv2+CE).
 - **Local builds** (optional convenience): `scripts\build_hap.bat`
@@ -182,10 +184,10 @@ loader owns `-cp`/`-Djava.library.path`, and the version's full
 `assetIndex.url` is fetched (and SHA-1 verified) instead of being
 reconstructed. The runtime catalog covers aarch64 Java 8/17/21/25 and
 x86_64 Java 21/25 — Minecraft 26.x requires Java 25, and the launcher never
-falls back to an older major version. aarch64 packs are bundled in the HAP
-(from `scripts/bundled-jres.lock.json`); x86_64 packs are bundled once the
-`jdk-x86_64-v1` release exists and downloaded otherwise. x86_64 checksums
-are refreshed from the release catalog before download; JDK8-style
+falls back to an older major version. All packs are bundled in the HAP
+(pinned by size and SHA-256 in `scripts/bundled-jres.lock.json`); the
+x86_64 packs come from the `jdk-ohos-v1` release of `openharmony-openjdk`.
+Missing packs are downloaded on demand, and JDK8-style
 `jre/lib/<arch>/server` layouts are normalized alongside modern `lib/server`.
 
 Known architectural limitation: the embedded HotSpot JVM is linked

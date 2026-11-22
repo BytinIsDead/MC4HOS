@@ -38,5 +38,9 @@ entry/oh-package-lock.json5
 # runtime packs fetched at build time and bundled into the HAP (never committed)
 /entry/src/main/resources/rawfile/jvm/
 
+# JRE native libraries extracted into the module libs for packaging (generated
+# by scripts/bundle_jre_natives.py; never committed)
+/entry/libs/
+
 # bridge jar compiled from entry/src/main/cpp/java by scripts/build_bridge_jar.py
 /entry/src/main/resources/rawfile/bridge/

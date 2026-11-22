@@ -60,6 +60,8 @@ if [ "${BUNDLE_JRES:-1}" != "0" ]; then
   echo "Fetching bundled Java runtimes (set BUNDLE_JRES=0 to skip)..."
   python3 "$ROOT/scripts/fetch_bundled_jres.py" \
     --dest "$ROOT/entry/src/main/resources/rawfile/jvm"
+  echo "Packaging JRE native libraries into entry/libs (<abi>/libjvm.so)..."
+  python3 "$ROOT/scripts/bundle_jre_natives.py"
 fi
 
 echo "Building HAP (debug, unsigned)..."

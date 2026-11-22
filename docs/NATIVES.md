@@ -49,16 +49,17 @@ committed (100 MB GitHub file limit and GPLv2+CE source-offer hygiene).
 
 ### x86_64 (built in this repository's CI)
 
-There is no public x86_64 OHOS JRE. The separate tree in `openharmony-jdk/`
+There is no public x86_64 OHOS JRE. A separate public repository,
+[`BytinIsDead/openharmony-openjdk`](https://github.com/BytinIsDead/openharmony-openjdk),
 cross-compiles the same pinned upstream JDK sources and OHOS patch series for
-`x86_64-linux-ohos`. `.github/workflows/jdk-x86_64.yml` builds
-`jre21-ohos-x86_64.zip` and `jre25-ohos-x86_64.zip`, uploads artifacts, and —
-when run with `publish = true` — publishes them plus `runtime-catalog.json`
-to the `jdk-x86_64-v1` release. The launcher fetches that catalog to obtain
-the per-build SHA-256 before downloading. Once the release exists, the build
-scripts also fetch and bundle both packs (their lock entries are optional
-until then). See `openharmony-jdk/README.md`
-for the local build command and licensing requirements.
+`x86_64-linux-ohos` and `aarch64-linux-ohos`. Its `jdk-ohos.yml` workflow
+builds Java 21/25 for both ABIs, uploads artifacts, and — when run with
+`publish = true` — publishes the packs plus `runtime-catalog.json` to the
+`jdk-ohos-v1` release. The launcher carries each pack's SHA-256 in
+`scripts/bundled-jres.lock.json` and verifies the download again at install
+time. The build scripts fetch and bundle the x86_64 packs from that release.
+See the repository README for the local build command and licensing
+requirements.
 
 Key configure details (both ABIs, OpenJDK 21/25 scheme):
 

@@ -55,13 +55,16 @@ OpenJDK.
 Distribution obligations (offer of source, license text preservation, and
 NOTICE propagation) apply to those binaries per their respective licenses.
 
-The build scripts in `openharmony-jdk/` are original MC4HOS code under this
-repository's MPL-2.0 terms. They **download** the third-party OpenJDK source
-and the OHOS patch/stub archives at build time; those archives and the
-resulting JDK images are GPLv2+CE works and are never committed.
+The build scripts in the separate
+[`openharmony-openjdk`](https://github.com/BytinIsDead/openharmony-openjdk)
+repository are original MC4HOS code under this repository's MPL-2.0 terms
+(`openharmony-jdk/` here is a reference copy). They **download** the
+third-party OpenJDK source and the OHOS patch/stub archives at build time;
+those archives and the resulting JDK images are GPLv2+CE works and are never
+committed.
 
-When runtime packs are bundled into the HAP (the default build for aarch64
-Java 8/17/21/25; x86_64 21/25 once the `jdk-x86_64-v1` release exists), the
+When runtime packs are bundled into the HAP (the default build: aarch64
+Java 8/17/21/25 plus x86_64 21/25 from the `jdk-ohos-v1` release), the
 HAP redistributes OpenJDK, so GPLv2+CE redistribution terms apply to those
 parts. The build writes `resources/rawfile/jvm/OpenJDK-LICENSE.txt` (GPLv2
 plus the Classpath Exception appendix) and `RUNTIME-NOTICES.txt` next to the
@@ -72,8 +75,8 @@ into the extracted runtime. The JDK8 pack additionally keeps its upstream
 Corresponding source for the GPLv2+CE code in a bundled pack:
 
 - x86_64 packs record the upstream source repositories, commits and pinned
-  build-input archives in their `MC4HOS-RUNTIME-NOTICE.txt` and
-  `openharmony-jdk/build-inputs.lock.json`.
+  build-input archives in their `MC4HOS-RUNTIME-NOTICE.txt` and the
+  openharmony-openjdk repository's `build-inputs.lock.json`.
 - aarch64 packs come unmodified from the pinned public community releases
   listed in `scripts/bundled-jres.lock.json`; use the source identities those
   releases publish, or request the corresponding source from the distributor.
@@ -88,6 +91,7 @@ name "MC4HOS" refers to this launcher in a purely descriptive, nominative
 sense. Users must comply with the Minecraft EULA (https://aka.ms/MinecraftEULA)
 and must already own the game; this launcher contains no game content.
 
-**Azure application notice:** Microsoft authentication requires your own
-Azure AD application registration (device-code flow enabled). MC4HOS ships
-**no** client secret or client id; see `docs/BUILD.md` §7.
+**Azure application notice:** Microsoft authentication uses a public OAuth
+client id compiled into the app (`AZURE_CLIENT_ID`); it is not a secret and
+device-code flow needs no client secret. Sign-in goes directly to
+Microsoft's documented endpoints; see `docs/BUILD.md` §7.

@@ -49,6 +49,12 @@ if not "%BUNDLE_JRES%"=="0" (
     echo ERROR: bundled runtime fetch failed
     exit /b 1
   )
+  echo Packaging JRE native libraries into entry\libs ...
+  python "%ROOT%\scripts\bundle_jre_natives.py"
+  if errorlevel 1 (
+    echo ERROR: JRE native packaging failed
+    exit /b 1
+  )
 )
 
 rem --- build ---------------------------------------------------------------

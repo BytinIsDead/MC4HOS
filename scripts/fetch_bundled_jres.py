@@ -14,9 +14,10 @@ entry/src/main/resources/rawfile/jvm/ so hvigor packages them inside the HAP.
 The app extracts the pack matching the device ABI and required Java major on
 first use.
 
-aarch64 packs are pinned by size and SHA-256. x86_64 packs come from this
-repository's jdk-x86_64-v1 release; their digests are read from the release
-catalog. x86_64 entries are optional until that release exists.
+aarch64 packs are pinned by size and SHA-256. x86_64 packs come from the
+separate openharmony-openjdk repository's jdk-ohos-v1 release and are pinned
+the same way; the release catalog is consulted for any entry that lacks a
+digest, and entries marked optional are skipped when unavailable.
 
 After fetching, the script writes OpenJDK-LICENSE.txt (GPLv2 + Classpath
 Exception) and RUNTIME-NOTICES.txt with each pack's source identity into the
@@ -76,10 +77,10 @@ def write_notices(dest: pathlib.Path, bundled: list) -> None:
         "  above; use the source identities those releases publish, or request the",
         "  corresponding source from whoever distributed this application.",
         "",
-        "  x86_64 packs are built by openharmony-jdk/ in this repository; the exact",
+        "  x86_64 packs are built by the openharmony-openjdk repository; the exact",
         "  upstream repositories, commits and build-input archives are recorded in",
-        "  each pack's MC4HOS-RUNTIME-NOTICE.txt, in",
-        "  openharmony-jdk/build-inputs.lock.json, and in the jdk-x86_64-v1 release.",
+        "  each pack's MC4HOS-RUNTIME-NOTICE.txt, in that repository's",
+        "  build-inputs.lock.json, and in the jdk-ohos-v1 release.",
         "",
         "  You may also obtain the corresponding source from whoever gave you this",
         "  application, per GPLv2 section 3.",
@@ -236,8 +237,7 @@ def main() -> int:
     print("")
     print(f"Bundled runtime directory: {args.dest}")
     if skipped:
-        print("Skipped optional packs (publish the x86_64 release first): "
-              + ", ".join(skipped))
+        print("Skipped optional packs: " + ", ".join(skipped))
     if failures:
         print("FAILED: " + ", ".join(failures))
         return 1

@@ -36,8 +36,9 @@ constexpr int kErrLibJvmMissing = 3;
 constexpr int kErrCreateFailed = 4;
 
 /**
- * dlopen()s `<javaHome>/lib/server/libjvm.so`, calls JNI_CreateJavaVM and
- * spawns the game thread. Returns 0 on success, non-zero error codes
+ * dlopen()s `<javaHome>/lib/server/libjvm.so`, creates the VM on a dedicated
+ * thread (JNI_CreateJavaVM makes its caller the primordial Java thread) and
+ * runs main() on that thread. Returns 0 on success, non-zero error codes
  * otherwise (documented in napi_init.cpp).
  */
 int StartJvm(const LaunchConfig &config);

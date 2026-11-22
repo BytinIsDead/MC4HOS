@@ -21,15 +21,17 @@ import { Paths } from '../common/Paths';
 /**
  * Embedded Java runtime manager.
  *
- * MC4HOS does not bundle a JVM. OpenHarmony OpenJDK builds are packaged as
- * **runtime packs**: zip archives containing a complete JRE/JDK image and a
- * `runtime.json` descriptor written at install time. Modern packs root at
+ * MC4HOS ships OpenHarmony OpenJDK builds as **runtime packs**: zip archives
+ * containing a runtime image and a `runtime.json` descriptor written at
+ * install time. The build bundles the packs for the device ABIs (aarch64 via
+ * the community releases, x86_64 via the `openharmony-openjdk` release), and
+ * a missing pack is downloaded or imported at runtime. Modern packs root at
  * `bin/`, `lib/`, `release`; JDK8 packs root at `jre/` with the VM under
  * `lib/<arch>/server/`. Both layouts are normalized to the JRE root here.
  *
  * aarch64 packs come from the public OHOS OpenJDK builds. x86_64 packs are
- * produced by the separate `openharmony-jdk/` tree and its GitHub Actions
- * workflow; see docs/NATIVES.md.
+ * produced by the separate `openharmony-openjdk` repository and its GitHub
+ * Actions workflow; see docs/NATIVES.md.
  */
 
 const TAG: string = 'JavaRuntime';
@@ -37,7 +39,7 @@ const TAG: string = 'JavaRuntime';
 const COMMUNITY_RELEASE_BASE: string =
   'https://github.com/LZZLHY/mc-ohos-resources/releases/download';
 const X86_RELEASE_BASE: string =
-  'https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1';
+  'https://github.com/BytinIsDead/openharmony-openjdk/releases/download/jdk-ohos-v1';
 
 /**
  * Runtime packs shipped inside the HAP under resources/rawfile/jvm/. The
@@ -45,6 +47,15 @@ const X86_RELEASE_BASE: string =
  * present here is extracted on first use instead of being downloaded.
  */
 const BUNDLED_RAW_PREFIX: string = 'jvm/';
+
+/**
+ * Java major whose native libraries are packaged inside the HAP
+ * (`libs/<abi>/libjvm.so` etc. via scripts/bundle_jre_natives.py). HarmonyOS
+ * refuses to dlopen libraries extracted into the app sandbox, and every
+ * OpenJDK build uses the same sonames, so exactly one major can be loadable
+ * per build. Runtime packs of other majors still extract, but cannot boot.
+ */
+const BUNDLED_NATIVE_MAJOR: number = 21;
 
 export interface RuntimeDescriptor {
   name: string;
@@ -67,10 +78,9 @@ export interface RuntimePackSource {
 /**
  * Built-in runtime catalog. The aarch64 entries are pinned to verified
  * community releases. The x86_64 21/25 entries point at the release produced
- * by `.github/workflows/jdk-x86_64.yml`; their checksums are refreshed at
- * install time from that release's `runtime-catalog.json`. Java 8/17 are not
- * part of the x86_64 build matrix — install a newer runtime for those games
- * or import a pack manually.
+ * by the `openharmony-openjdk` repository, pinned by the digests published in
+ * its `jdk-ohos-v1` catalog. Java 8/17 are not part of the x86_64 build matrix
+ * — install a newer runtime for those games or import a pack manually.
  */
 const RUNTIME_CATALOG: Array<RuntimePackSource> = [
   {
@@ -101,11 +111,15 @@ const RUNTIME_CATALOG: Array<RuntimePackSource> = [
   { name: 'jre17-ohos-x86_64', javaMajor: 17, abi: 'x86_64', packUrl: '', sha256: '', sizeBytes: 0 },
   {
     name: 'jre21-ohos-x86_64', javaMajor: 21, abi: 'x86_64',
-    packUrl: `${X86_RELEASE_BASE}/jre21-ohos-x86_64.zip`, sha256: '', sizeBytes: 0
+    packUrl: `${X86_RELEASE_BASE}/jre21-ohos-x86_64.zip`,
+    sha256: '907950dc183cbaa7a6ecbd09f0243adc2edb7ec6477fde1baf9a7ec58cbc9f1c',
+    sizeBytes: 57722130
   },
   {
     name: 'jre25-ohos-x86_64', javaMajor: 25, abi: 'x86_64',
-    packUrl: `${X86_RELEASE_BASE}/jre25-ohos-x86_64.zip`, sha256: '', sizeBytes: 0
+    packUrl: `${X86_RELEASE_BASE}/jre25-ohos-x86_64.zip`,
+    sha256: '293d7149ab555d19f2abbb64b61c432f115a3b5983668fe0da87a93386337f41',
+    sizeBytes: 62616461
   }
 ];
 
@@ -155,6 +169,10 @@ export class JavaRuntimeManager {
       const major: number = getNum(obj, 'javaMajor');
       const size: number = getNum(obj, 'sizeBytes');
       if (name.length === 0 || major === 0 || sha256.length !== 64 || size <= 0) {
+        continue;
+      }
+      // This catalog only pins the x86_64 packs; aarch64 keeps its built-ins.
+      if (getStr(obj, 'abi') !== 'x86_64') {
         continue;
       }
       // Only accept packs hosted by this repository's release; a remote
@@ -210,11 +228,51 @@ export class JavaRuntimeManager {
     return '';
   }
 
+  /**
+   * The platform refuses dlopen for libraries in the app sandbox, so every
+   * native has to come from the HAP copy. HotSpot locates libjimage, libzip
+   * and libjava through sun.boot.library.path, and the runtime's own lib dir
+   * is searched first; deleting those extracted copies makes the lookup fall
+   * through to the HAP directory. libjvm.so stays because runtime discovery
+   * keys on it.
+   */
+  private static stripExtractedNatives(home: string): void {
+    const walk = (dir: string): void => {
+      let names: Array<string> = [];
+      try {
+        names = fs.listFileSync(dir);
+      } catch (err) {
+        return;
+      }
+      for (const name of names) {
+        const path: string = `${dir}/${name}`;
+        try {
+          if (fs.statSync(path).isDirectory()) {
+            walk(path);
+          } else if (name.endsWith('.so') && name !== 'libjvm.so') {
+            fs.unlinkSync(path);
+          }
+        } catch (err) {
+          // vanished or locked entry; skip
+        }
+      }
+    };
+    walk(`${home}/lib`);
+    walk(`${home}/jre/lib`);
+  }
+
   /** Directories to put on the JVM library path for an installed runtime. */
   public static nativeLibraryDirs(javaHome: string): Array<string> {
+    JavaRuntimeManager.stripExtractedNatives(javaHome);
     const arch: string = Paths.deviceAbi() === 'arm64-v8a' ? 'aarch64' : 'x86_64';
     const rels: Array<string> = ['lib/server', 'lib', `lib/${arch}/server`, `lib/${arch}`];
     const dirs: Array<string> = [];
+    // The HAP copy is the only one the platform can dlopen; it must come
+    // first so the JVM resolves its own natives from the bundle.
+    const hapDir: string = Paths.hapNativeLibraryDir();
+    if (hapDir.length > 0) {
+      dirs.push(hapDir);
+    }
     for (const rel of rels) {
       const dir: string = `${javaHome}/${rel}`;
       if (fs.accessSync(dir) && dirs.indexOf(dir) < 0) {
@@ -222,6 +280,15 @@ export class JavaRuntimeManager {
       }
     }
     return dirs;
+  }
+
+  /** Java major whose native libraries are packaged in the HAP. */
+  public static bundledMajor(): number {
+    return BUNDLED_NATIVE_MAJOR;
+  }
+
+  private static isLoadable(runtime: RuntimeDescriptor): boolean {
+    return runtime.javaMajor === BUNDLED_NATIVE_MAJOR;
   }
 
   private static hasJvm(dir: string): boolean {
@@ -411,13 +478,19 @@ export class JavaRuntimeManager {
 
   /**
    * Extracts the nearest bundled runtime that satisfies the required major.
-   * Returns null when nothing suitable ships in the HAP.
+   * Only the major whose natives ship in the HAP can boot, so any newer
+   * requirement fails here. Returns null when nothing suitable ships.
    */
   private static async ensureBundledFor(
     javaMajorRequired: number): Promise<RuntimeDescriptor | null> {
+    if (javaMajorRequired > BUNDLED_NATIVE_MAJOR) {
+      Logger.error(TAG, `Java ${javaMajorRequired} required, but this build ` +
+        `packages Java ${BUNDLED_NATIVE_MAJOR} natives in the HAP`);
+      return null;
+    }
     const candidates: Array<RuntimePackSource> =
       JavaRuntimeManager.bundledPacksFor(Paths.deviceAbi())
-        .filter((pack: RuntimePackSource) => pack.javaMajor >= javaMajorRequired);
+        .filter((pack: RuntimePackSource) => pack.javaMajor === BUNDLED_NATIVE_MAJOR);
     for (const pack of candidates) {
       if (await JavaRuntimeManager.installBundled(pack)) {
         const selected: RuntimeDescriptor | null =
@@ -431,8 +504,9 @@ export class JavaRuntimeManager {
   }
 
   /**
-   * Extracts any bundled runtime (newest first). Used before the no-account
-   * JVM self-test so a fresh install has something to boot.
+   * Extracts the bundled runtime whose natives are packaged in the HAP. Used
+   * before the no-account JVM self-test so a fresh install has something to
+   * boot.
    */
   public static async ensureAnyBundled(): Promise<RuntimeDescriptor | null> {
     const existing: RuntimeDescriptor | null = JavaRuntimeManager.firstInstalled();
@@ -440,7 +514,8 @@ export class JavaRuntimeManager {
       return existing;
     }
     const candidates: Array<RuntimePackSource> =
-      JavaRuntimeManager.bundledPacksFor(Paths.deviceAbi()).reverse();
+      JavaRuntimeManager.bundledPacksFor(Paths.deviceAbi())
+        .filter((pack: RuntimePackSource) => pack.javaMajor === BUNDLED_NATIVE_MAJOR);
     for (const pack of candidates) {
       if (await JavaRuntimeManager.installBundled(pack)) {
         const installed: RuntimeDescriptor | null = JavaRuntimeManager.firstInstalled();
@@ -513,11 +588,14 @@ export class JavaRuntimeManager {
     return out;
   }
 
-  /** Any installed runtime for this device — used by the JVM self-test. */
+  /** Any installed runtime this build can boot — used by the JVM self-test. */
   public static firstInstalled(): RuntimeDescriptor | null {
     const installed: Array<RuntimeDescriptor> = JavaRuntimeManager.listInstalled();
     const abi: string = Paths.deviceAbi();
     for (const r of installed) {
+      if (!JavaRuntimeManager.isLoadable(r)) {
+        continue;
+      }
       if (r.abi === undefined || r.abi === abi) {
         return r;
       }
@@ -531,8 +609,12 @@ export class JavaRuntimeManager {
     const abi: string = Paths.deviceAbi();
     // Exact match first, otherwise the nearest newer major. Never run a
     // major older than the game requires — class file versions would fail.
+    // Runtimes without natives in the HAP cannot boot on this platform.
     let best: RuntimeDescriptor | null = null;
     for (const r of installed) {
+      if (!JavaRuntimeManager.isLoadable(r)) {
+        continue;
+      }
       if (r.abi !== undefined && r.abi !== abi) {
         continue;
       }
@@ -571,6 +653,11 @@ export class JavaRuntimeManager {
    */
   public static async install(pack: RuntimePackSource,
     onProgress?: (received: number, total: number) => void): Promise<boolean> {
+    if (pack.javaMajor !== BUNDLED_NATIVE_MAJOR) {
+      Logger.error(TAG, `runtime ${pack.name} cannot boot: this build packages ` +
+        `Java ${BUNDLED_NATIVE_MAJOR} natives in the HAP`);
+      return false;
+    }
     if (pack.packUrl.length === 0) {
       Logger.error(TAG,
         `runtime pack ${pack.name} (${pack.abi}) has no URL configured — see docs/NATIVES.md`);
@@ -622,9 +709,16 @@ export class JavaRuntimeManager {
 
   /**
    * Ensures a suitable runtime exists for the required major version,
-   * downloading one from the catalog when necessary.
+   * downloading one from the catalog when the bundled pack is absent. Only
+   * Java BUNDLED_NATIVE_MAJOR can run: its natives are the ones packaged in
+   * the HAP, and newer majors have no loadable libraries.
    */
   public static async ensureRuntime(javaMajorRequired: number): Promise<RuntimeDescriptor | null> {
+    if (javaMajorRequired > BUNDLED_NATIVE_MAJOR) {
+      Logger.error(TAG, `Java ${javaMajorRequired} is required but this build ` +
+        `packages Java ${BUNDLED_NATIVE_MAJOR} natives in the HAP`);
+      return null;
+    }
     const existing: RuntimeDescriptor | null = JavaRuntimeManager.selectFor(javaMajorRequired);
     if (existing !== null) {
       return existing;
@@ -635,7 +729,9 @@ export class JavaRuntimeManager {
       return bundled;
     }
     await JavaRuntimeManager.refreshCatalog();
-    const pack: RuntimePackSource | null = JavaRuntimeManager.catalogFor(javaMajorRequired);
+    // All majors up to BUNDLED_NATIVE_MAJOR run on the bundled-native major;
+    // fetching an older pack would produce unloadable libraries on HarmonyOS.
+    const pack: RuntimePackSource | null = JavaRuntimeManager.catalogFor(BUNDLED_NATIVE_MAJOR);
     if (pack === null) {
       return null;
     }

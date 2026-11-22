@@ -7,16 +7,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import preferences from '@ohos.data.preferences';
 import common from '@ohos.app.ability.common';
 import hidebug from '@ohos.hidebug';
 import util from '@ohos.util';
 import storageStatistics from '@ohos.file.storageStatistics';
 import picker from '@ohos.file.picker';
-import { MicrosoftAuth } from '../auth/MicrosoftAuth';
 import { GameLauncherPushBridge } from './HomeTab.ets';
 import {
-  KEY_RAM_MB, KEY_RESOLUTION_SCALE, KEY_DEMO_MODE, DEFAULT_AZURE_CLIENT_ID,
+  KEY_RAM_MB, KEY_RESOLUTION_SCALE, KEY_DEMO_MODE,
   clampRam, maxDeviceRamMb
 } from '../common/AppState';
 import { DeployImport } from '../common/DeployImport';
@@ -25,21 +23,15 @@ import { JavaRuntimeManager } from '../download/JavaRuntimeManager';
 import { Paths } from '../common/Paths';
 
 /**
- * Settings: memory, internal render resolution scale, self-test mode,
- * Azure AD client id for the device-code flow, and the control layout
- * editor entry point.
+ * Settings: memory, internal render resolution scale, self-test mode, Java
+ * runtime import, deployment helpers and the control layout editor.
  */
-
-const PREF_NAME: string = 'mc4hos.settings';
-const KEY_AZURE_CLIENT_ID: string = 'azureClientId';
 
 @Component
 export struct SettingsPage {
   @StorageLink(KEY_RAM_MB) ramMb: number = 2048;
   @StorageLink(KEY_RESOLUTION_SCALE) resolutionScale: number = 100;
   @StorageLink(KEY_DEMO_MODE) selfTestMode: boolean = false;
-  @State clientId: string = '';
-  @State savedHint: string = '';
   @State packZipName: string = '';
   @State nativesMcVersion: string = '';
   @State deployStatus: string = '';
@@ -97,7 +89,6 @@ export struct SettingsPage {
   }
 
   aboutToAppear(): void {
-    this.loadClientId();
     this.refreshDiagnostics();
     this.refreshRuntimes();
   }
@@ -136,23 +127,6 @@ export struct SettingsPage {
       this.importingJdk = false;
       this.refreshRuntimes();
     }
-  }
-
-  private async loadClientId(): Promise<void> {
-    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    const prefs = await preferences.getPreferences(context, { name: PREF_NAME });
-    this.clientId = await prefs.get(KEY_AZURE_CLIENT_ID, DEFAULT_AZURE_CLIENT_ID) as string;
-  }
-
-  private async saveClientId(): Promise<void> {
-    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    const prefs = await preferences.getPreferences(context, { name: PREF_NAME });
-    await prefs.put(KEY_AZURE_CLIENT_ID, this.clientId.trim());
-    await prefs.flush();
-    MicrosoftAuth.configure(this.clientId.trim());
-    this.savedHint = this.clientId.trim().length > 0
-      ? 'Client id saved.'
-      : 'Client id cleared.';
   }
 
   build() {
@@ -228,43 +202,6 @@ export struct SettingsPage {
           }
           .width('100%')
           .margin({ top: 12 })
-
-          // Azure client id
-          Text('Microsoft OAuth client id')
-            .fontSize(14)
-            .fontColor('#FFFFFF')
-            .width('100%')
-            .margin({ top: 16 })
-          Text('Your own Azure AD application (public client, device-code flow enabled). ' +
-            'MC4HOS ships no client id. See docs/BUILD.md §7.')
-            .fontSize(11)
-            .fontColor('#8FA0B3')
-            .width('100%')
-            .margin({ top: 2 })
-          TextInput({ text: this.clientId, placeholder: '00000000-0000-0000-0000-000000000000' })
-            .width('100%')
-            .height(40)
-            .fontSize(13)
-            .backgroundColor('#1F2430')
-            .fontColor('#FFFFFF')
-            .margin({ top: 6 })
-            .onChange((value: string) => {
-              this.clientId = value;
-            })
-          Button('Save client id')
-            .height(34)
-            .fontSize(12)
-            .backgroundColor('#2A3340')
-            .margin({ top: 6 })
-            .onClick(() => {
-              this.saveClientId();
-            })
-          if (this.savedHint.length > 0) {
-            Text(this.savedHint)
-              .fontSize(11)
-              .fontColor('#63C36A')
-              .margin({ top: 4 })
-          }
 
           // Runtime diagnostics (HarmonyOS 6.1.1 / API 24 capabilities)
           Row() {

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "description": "Runtime packs fetched at build time and bundled into the HAP rawfile. Binaries are never committed.",
-  "x86CatalogUrl": "https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1/runtime-catalog.json",
+  "x86CatalogUrl": "https://github.com/BytinIsDead/openharmony-openjdk/releases/download/jdk-ohos-v1/runtime-catalog.json",
   "packs": [
     {
       "name": "jre8-ohos-aarch64",
@@ -43,19 +43,19 @@
       "name": "jre21-ohos-x86_64",
       "javaMajor": 21,
       "abi": "x86_64",
-      "url": "https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1/jre21-ohos-x86_64.zip",
-      "sha256": "",
-      "sizeBytes": 0,
-      "optional": true
+      "url": "https://github.com/BytinIsDead/openharmony-openjdk/releases/download/jdk-ohos-v1/jre21-ohos-x86_64.zip",
+      "sha256": "907950dc183cbaa7a6ecbd09f0243adc2edb7ec6477fde1baf9a7ec58cbc9f1c",
+      "sizeBytes": 57722130,
+      "optional": false
     },
     {
       "name": "jre25-ohos-x86_64",
       "javaMajor": 25,
       "abi": "x86_64",
-      "url": "https://github.com/BytinIsDead/MC4HOS/releases/download/jdk-x86_64-v1/jre25-ohos-x86_64.zip",
-      "sha256": "",
-      "sizeBytes": 0,
-      "optional": true
+      "url": "https://github.com/BytinIsDead/openharmony-openjdk/releases/download/jdk-ohos-v1/jre25-ohos-x86_64.zip",
+      "sha256": "293d7149ab555d19f2abbb64b61c432f115a3b5983668fe0da87a93386337f41",
+      "sizeBytes": 62616461,
+      "optional": false
     }
   ]
 }

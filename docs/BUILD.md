@@ -22,7 +22,7 @@ sources by *you* (see [NATIVES.md](NATIVES.md)).
 | HarmonyOS SDK | API **24** (`compatibleSdkVersion: "6.1.1(24)"`) | Enable **Native SDK** (C++ toolchain) in SDK manager |
 | Device / emulator | HarmonyOS 6.1.1, **arm64-v8a or x86_64** | Real device recommended (JVM + GPU required). The OHOS NDK has no 32-bit x86 ABI; the emulator and Intel 2-in-1s run `x86_64` |
 | hdc | from SDK | `hdc install`, `hdc file send`, logs via `hdc hilog` |
-| (runtime) OpenJDK OHOS builds | aarch64: 8 / 17 / 21 / 25; x86_64: 21 / 25 | aarch64 packs are fetched at build time and bundled in the HAP; x86_64 packs are built by [openharmony-jdk](../openharmony-jdk/README.md) and bundled once the release is published (otherwise downloaded/imported) · see [NATIVES.md](NATIVES.md); latest Minecraft releases require Java 25 |
+| (runtime) OpenJDK OHOS builds | aarch64: 8 / 17 / 21 / 25; x86_64: 21 / 25 | All packs are fetched at build time and bundled in the HAP; x86_64 packs are built by [openharmony-openjdk](https://github.com/BytinIsDead/openharmony-openjdk) and published as `jdk-ohos-v1` · see [NATIVES.md](NATIVES.md); latest Minecraft releases require Java 25 |
 | (runtime) LWJGL / OpenAL-Soft OHOS builds | 3.3.x × both ABIs | produced per [NATIVES.md](NATIVES.md) |
 
 ## 2. Open and configure the project
@@ -77,8 +77,9 @@ hvigorw assembleHap --mode module -p product=default -p buildMode=release
 The fetch step downloads the pinned packs from
 `scripts/bundled-jres.lock.json` into
 `entry/src/main/resources/rawfile/jvm/` (gitignored) so hvigor packages them
-as stored rawfiles: roughly 390 MB of aarch64 runtimes (8/17/21/25), plus
-x86_64 packs once the `jdk-x86_64-v1` release exists. Set `BUNDLE_JRES=0`
+as stored rawfiles: roughly 390 MB of aarch64 runtimes (8/17/21/25) plus
+about 120 MB of x86_64 runtimes (21/25) from `jdk-ohos-v1`. Set
+`BUNDLE_JRES=0`
 when using `scripts/build_hap.*` to build a small HAP without bundled
 runtimes; the app then downloads packs on demand. Building from the DevEco
 GUI does not run the fetch step.
@@ -114,12 +115,12 @@ hdc hilog | grep -E "MC4HOS|Game"
    proves XComponent → `libmc4hos_core.so` → EGLNativeWindow.
 2. **Console tab** — verify native `initialize()` log pump works
    (lines tagged `Game`).
-3. **Account** — configure the Azure client id (§7), sign in on the
-   Accounts tab (device-code flow).
+3. **Account** — sign in on the Accounts tab (device-code flow); the Azure
+   client id is compiled in (§7).
 4. **Versions tab** — install a release (client jar + libraries + assets).
 5. **Runtime** — the launcher extracts the bundled pack that matches the
    device ABI and the version's required major on first use (aarch64 Java
-   8/17/21/25; x86_64 21/25 once the release exists). Confirm
+   8/17/21/25; x86_64 21/25). Confirm
    `jvm/jre<major>-ohos-<abi>/runtime.json` exists (the launcher logs the
    device ABI at startup: `device ABI: arm64-v8a` / `x86_64`). Use the
    major required by the version JSON (`javaVersion.majorVersion`); current
@@ -137,8 +138,8 @@ hdc hilog | grep -E "MC4HOS|Game"
 `resources/rawfile/jvm/*.zip` (fetched at build time) and extracts the
 matching pack into the sandbox on first use — no network, no `hdc`.
 
-**Manual runtime import** (when a pack is not bundled, e.g. x86_64 before the
-release is published): the in-app importer works on every device.
+**Manual runtime import** (when a pack is missing from the build, e.g.
+`BUNDLE_JRES=0`): the in-app importer works on every device.
 `hdc file send` into app sandboxes often fails with "No such file or
 directory" / permission errors — but `/data/local/tmp` is world-writable:
 
@@ -206,18 +207,28 @@ Imported packs (Settings → Deployment)
 are parsed from their `jre<major>-ohos-<abi>.zip` (or `jdk…`) name and use
 the same layout discovery.
 
-For **x86_64**, build the pack with `openharmony-jdk/scripts/build_x86_64.sh`
-(or download the CI artifact from the `jdk-x86_64-v1` release) and import
+For **x86_64**, build the pack in the separate
+[openharmony-openjdk](https://github.com/BytinIsDead/openharmony-openjdk)
+repository (`scripts/build_ohos_jre.sh --arch x86_64`, or download the CI
+artifact from the `jdk-ohos-v1` release) and import
 `jre21-ohos-x86_64.zip` / `jre25-ohos-x86_64.zip` exactly as above. No
 aarch64 runtime can run on x86_64 — the JVM is loaded in-process.
 
 Sandbox paths for debug builds can also be browsed via DevEco
 `Device File Browser`.
 
-## 7. Microsoft OAuth: your Azure application
+## 7. Microsoft OAuth: the Azure application
 
-MC4HOS deliberately ships **no** Microsoft client id (see NOTICE.md).
-Each distributor registers one:
+MC4HOS compiles a Microsoft OAuth **public client** id into the app
+(`AZURE_CLIENT_ID` in `entry/src/main/ets/common/AppState.ets`; applied at
+startup by `EntryAbility` via `MicrosoftAuth.configure`). It is **not** a
+secret and device-code flow needs no client secret. There is no in-app
+override; to change it, edit the constant and rebuild.
+
+The compiled-in registration must exist in the consumers tenant and be
+configured as follows — otherwise sign-in fails with the AADSTS code shown
+on the Accounts page (700016 = unknown app / wrong tenant, 7000218 =
+public client flows disabled):
 
 1. https://portal.azure.com → Microsoft Entra ID → App registrations →
    **New registration**.
@@ -225,10 +236,7 @@ Each distributor registers one:
    (consumers) or the multitenant+personal option.
 3. Authentication → **Allow public client flows: Yes** (required for
    device-code flow). No redirect URI and no client secret needed.
-4. Copy the *Application (client) ID* and either paste it into the app's
-   Settings page, or pre-seed it by adding it to
-   `EntryAbility.onCreate` via `MicrosoftAuth.configure("<client-id>")`
-   behind your own build flag.
+4. Copy the *Application (client) ID* into `AZURE_CLIENT_ID`.
 
 The requested scope is fixed to `XboxLive.signin offline_access` in
 `auth/MicrosoftAuth.ets`.
@@ -292,8 +300,7 @@ secrets and no repository variables required**:
 2. **build** — full unsigned HAP on GitHub-hosted runners. Before building,
    `scripts/fetch_bundled_jres.py` downloads the pinned runtime packs into
    `entry/src/main/resources/rawfile/jvm/` (cached by
-   `scripts/bundled-jres.lock.json`); aarch64 packs are required, x86_64
-   packs are optional until the `jdk-x86_64-v1` release exists. The HarmonyOS
+   `scripts/bundled-jres.lock.json`); all packs are required. The HarmonyOS
    toolchain (commandline-tools 6.1.1.280, bundled SDK = API 24, matching
    `modelVersion` 6.1.1) is fetched from **public, login-free sources** —
    Huawei's own download page is login-gated, so the workflow uses a public
@@ -326,13 +333,15 @@ secrets and no repository variables required**:
    `HOS_TOOLS_URL` can pin a different toolchain (tried first) — never a
    secret.
 
-**x86_64 Java runtime (`jdk-x86_64.yml`)** is a separate workflow that uses
-the same toolchain zip but builds the JDKs in `openharmony-jdk/`, not the
-HAP. Run it manually with `publish = true` (or push a `jdk-x86_64-v*` tag)
-to create the release that the launcher's x86_64 catalog points at. Build
-inputs are pinned by SHA-256 in `openharmony-jdk/build-inputs.lock.json`;
-the workflow uploads artifacts on every run and publishes only when asked.
-See `openharmony-jdk/README.md` for the GPLv2+CE source-offer obligations.
+**OpenJDK runtime builds (`jdk-ohos.yml`)** live in the separate
+[openharmony-openjdk](https://github.com/BytinIsDead/openharmony-openjdk)
+repository. That workflow uses the same toolchain zip but builds the JDKs,
+not the HAP, for both x86_64 and aarch64. Run it manually with
+`publish = true` (or push a `jdk-ohos-v*` tag) to create the `jdk-ohos-v1`
+release that the launcher's x86_64 catalog points at. Build inputs are pinned
+by SHA-256 in that repository's `build-inputs.lock.json`; the workflow
+uploads artifacts on every run and publishes only when asked. See its README
+for the GPLv2+CE source-offer obligations.
 
 The produced HAP is **unsigned** (debug signing certificates are
 account-bound); signing stays a local manual step (§2). For local builds

@@ -6,8 +6,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Cross-compiles OpenJDK 21/25 for x86_64-linux-ohos (musl) and packages a
-# complete runtime zip. Requires a Linux x86_64 host. See README.md.
+# Cross-compiles OpenJDK 21/25 for x86_64-linux-ohos or aarch64-linux-ohos
+# (musl) and packages a complete runtime zip. Requires a Linux x86_64 host.
+# See README.md.
 
 set -euo pipefail
 
@@ -15,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TREE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MAJOR="${MAJOR:-21}"
+ARCH="${ARCH:-x86_64}"
 OHOS_NATIVE="${OHOS_NATIVE:-}"
 BUILD_INPUTS="${BUILD_INPUTS:-}"
 WORK_DIR="${WORK_DIR:-}"
@@ -26,8 +28,9 @@ die() { echo "error: $*" >&2; exit 1; }
 
 usage() {
   cat <<'USAGE'
-Usage: build_x86_64.sh --major 21|25 --native <ohos-native> --inputs <build-inputs>
-                       [--work <dir>] [--output <dir>] [--release-base <url>]
+Usage: build_ohos_jre.sh --major 21|25 --arch x86_64|aarch64
+                         --native <ohos-native> --inputs <build-inputs>
+                         [--work <dir>] [--output <dir>] [--release-base <url>]
 
 Environment:
   JAVA_HOME       Boot JDK 21 (for --major 21) or 25 (for --major 25)
@@ -39,6 +42,7 @@ USAGE
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --major) MAJOR="$2"; shift 2 ;;
+    --arch) ARCH="$2"; shift 2 ;;
     --native) OHOS_NATIVE="$2"; shift 2 ;;
     --inputs) BUILD_INPUTS="$2"; shift 2 ;;
     --work) WORK_DIR="$2"; shift 2 ;;
@@ -51,7 +55,11 @@ done
 
 case "$MAJOR" in
   21|25) ;;
-  *) die "--major must be 21 or 25 (Java 8/17 x86_64 builds are not part of this tree)" ;;
+  *) die "--major must be 21 or 25 (Java 8/17 builds are not part of this tree)" ;;
+esac
+case "$ARCH" in
+  x86_64|aarch64) ;;
+  *) die "--arch must be x86_64 or aarch64" ;;
 esac
 [ -n "$OHOS_NATIVE" ] || die "--native is required (…/openharmony/native)"
 [ -d "$OHOS_NATIVE/sysroot" ] || die "not an OHOS native SDK: $OHOS_NATIVE"
@@ -60,7 +68,7 @@ esac
 
 OHOS_NATIVE="$(cd "$OHOS_NATIVE" && pwd)"
 BUILD_INPUTS="$(cd "$BUILD_INPUTS" && pwd)"
-WORK_DIR="${WORK_DIR:-$PWD/work-jdk$MAJOR}"
+WORK_DIR="${WORK_DIR:-$PWD/work-jdk$MAJOR-$ARCH}"
 OUT_DIR="${OUT_DIR:-$PWD/out}"
 mkdir -p "$WORK_DIR" "$OUT_DIR"
 WORK_DIR="$(cd "$WORK_DIR" && pwd)"
@@ -83,6 +91,11 @@ case "$BOOT_MAJOR" in 1) BOOT_MAJOR="$(echo "$BOOT_VERSION" | cut -d. -f2)" ;; e
 [ "${BOOT_MAJOR:-0}" -ge "$MAJOR" ] 2>/dev/null \
   || die "boot JDK is $BOOT_VERSION; JDK $MAJOR (or newer within the same line) is required"
 
+# OpenJDK probes 'date --version' for GNU and otherwise emits BSD '-j' flags.
+# uutils coreutils (Ubuntu 25.10+) fails that probe and breaks jar --date.
+date --version 2>/dev/null | grep -q "GNU coreutils" \
+  || die "GNU coreutils is required; install coreutils-from-gnu and remove coreutils-from-uutils"
+
 read -r SRC_REPO SRC_COMMIT < <(python3 - "$INPUTS_JSON" "$MAJOR" <<'PY'
 import json, sys
 item = json.load(open(sys.argv[1], encoding="utf-8"))["runtimes"][sys.argv[2]]
@@ -91,7 +104,7 @@ PY
 )
 [ -n "${SRC_REPO:-}" ] && [ -n "${SRC_COMMIT:-}" ] || die "source pin missing from $INPUTS_JSON"
 
-echo "=== OpenJDK $MAJOR for x86_64-linux-ohos ==="
+echo "=== OpenJDK $MAJOR for $ARCH-linux-ohos ==="
 echo "Native SDK:  $OHOS_NATIVE"
 echo "Build inputs:$BUILD_INPUTS"
 echo "Work:        $WORK_DIR"
@@ -111,8 +124,7 @@ elif [ ! -f "$SYSROOT_MARKER" ] || [ "$(cat "$SYSROOT_MARKER")" != "$OHOS_NATIVE
   die "$SYSROOT was prepared from a different SDK; use a new --work directory"
 fi
 
-ARCH="x86_64"
-TRIPLE="x86_64-linux-ohos"
+TRIPLE="$ARCH-linux-ohos"
 TARGET_LIB="$SYSROOT/usr/lib/$TRIPLE"
 ARCH_INCLUDE="$SYSROOT/usr/include/$TRIPLE"
 LIBCXX_INC="$OHOS_NATIVE/llvm/include/libcxx-ohos/include/c++/v1"
@@ -279,12 +291,29 @@ else
   echo "Source tree already modified; skipping patch application"
 fi
 
+# Repository-local compatibility patches for the pinned upstream commit.
+LOCAL_PATCH_DIR="$TREE_DIR/scripts/patches/jdk$MAJOR"
+if [ -d "$LOCAL_PATCH_DIR" ]; then
+  for patch in "$LOCAL_PATCH_DIR"/*.patch; do
+    [ -e "$patch" ] || continue
+    local_name="$(basename "$patch")"
+    if git -C "$SRC" apply --check "$patch" 2>/dev/null; then
+      git -C "$SRC" apply "$patch"
+      echo "Applied local patch $local_name"
+    elif git -C "$SRC" apply --reverse --check "$patch" 2>/dev/null; then
+      echo "Local patch already integrated upstream: $local_name"
+    else
+      echo "warning: local patch $local_name neither applies nor is present (assuming upstream fixed)"
+    fi
+  done
+fi
+
 # ---------------------------------------------------------------------------
 # 5. Configure and build
 # ---------------------------------------------------------------------------
 COMMON_FLAGS="--target=$TRIPLE --sysroot=$SYSROOT -fPIC \
 -D__OHOS__=1 -D__OHOS_FAMILY__=1 -D__OHOS_Major__=0 -D__MUSL__ -DMUSL_LIBC \
-$ARCH_INCLUDE -I$WORK_DIR/stub-headers -isystem $LIBCXX_INC \
+-I$ARCH_INCLUDE -I$WORK_DIR/stub-headers -isystem $LIBCXX_INC \
 -B$TARGET_LIB -L$TARGET_LIB -rtlib=compiler-rt -unwindlib=none"
 if [ -d "$BUILD_INPUTS/prebuilt/jdk/$MAJOR/shims" ]; then
   COMMON_FLAGS="-I$BUILD_INPUTS/prebuilt/jdk/$MAJOR/shims $COMMON_FLAGS"
@@ -297,11 +326,16 @@ EXTRA_LDFLAGS="--target=$TRIPLE --sysroot=$SYSROOT -fuse-ld=lld \
 export SOURCE_DATE_EPOCH="$(git -C "$SRC" log -1 --format=%ct)"
 export PATH="$TC:$PATH"
 
+# Some OHOS SDK headers (e.g. ohaudio) use bool from plain C without
+# including <stdbool.h>; scripts/patches/<major>/ fixes the JavaSound
+# sources. Do not add -include stdbool.h to CFLAGS_JDKLIB: the C
+# preprocessor also generates Java sources, where true/false must stay.
 cd "$SRC"
 echo "=== configure ==="
+set +e
 bash configure \
   --build=x86_64-unknown-linux-gnu \
-  --openjdk-target=x86_64-unknown-linux-musl \
+  --openjdk-target=$ARCH-unknown-linux-musl \
   --with-jvm-variants=server \
   --with-debug-level=release \
   --with-native-debug-symbols=none \
@@ -318,20 +352,27 @@ bash configure \
   --with-toolchain-type=clang \
   CC="$TC/$TRIPLE-gcc" \
   CXX="$TC/$TRIPLE-g++" \
-  CPP="$TC/$TRIPLE-gcc -E $ARCH_INCLUDE -I$WORK_DIR/stub-headers --target=$TRIPLE --sysroot=$SYSROOT" \
-  CXXCPP="$TC/$TRIPLE-g++ -E $ARCH_INCLUDE -I$WORK_DIR/stub-headers --target=$TRIPLE --sysroot=$SYSROOT" \
+  CPP="$TC/$TRIPLE-gcc -E -I$ARCH_INCLUDE -I$WORK_DIR/stub-headers --target=$TRIPLE --sysroot=$SYSROOT" \
+  CXXCPP="$TC/$TRIPLE-g++ -E -I$ARCH_INCLUDE -I$WORK_DIR/stub-headers --target=$TRIPLE --sysroot=$SYSROOT" \
   AR="$TC/$TRIPLE-ar" \
   STRIP="$TC/$TRIPLE-strip" \
   NM="$TC/$TRIPLE-nm" \
   OBJCOPY="$TC/$TRIPLE-objcopy" \
-  BUILD_CC="$(command -v gcc)" \
-  BUILD_CXX="$(command -v g++)" \
+  BUILD_CC="$(command -v clang)" \
+  BUILD_CXX="$(command -v clang++)" \
   2>&1 | tee "$WORK_DIR/configure-$MAJOR.log"
+CONFIGURE_RC=${PIPESTATUS[0]}
+set -e
+if [ "$CONFIGURE_RC" -ne 0 ]; then
+  echo "=== config.log (tail) ==="
+  tail -n 400 config.log || true
+  exit "$CONFIGURE_RC"
+fi
 
 echo "=== make images (JOBS=$JOBS) ==="
 make images JOBS="$JOBS" 2>&1 | tee "$WORK_DIR/build-$MAJOR.log"
 
-IMAGE="$SRC/build/linux-x86_64-server-release/images/jdk"
+IMAGE="$SRC/build/linux-$ARCH-server-release/images/jdk"
 [ -f "$IMAGE/release" ] && [ -f "$IMAGE/lib/modules" ] \
   && [ -f "$IMAGE/lib/server/libjvm.so" ] \
   || die "missing final image at $IMAGE"
@@ -342,11 +383,16 @@ IMAGE="$SRC/build/linux-x86_64-server-release/images/jdk"
 cp -f "$TARGET_LIB/libc++_shared.so" "$IMAGE/lib/"
 cp -f "$WORK_DIR/lib/libcxxabi_shim.so" "$IMAGE/lib/"
 
-PACK_NAME="jre${MAJOR}-ohos-x86_64"
+PACK_NAME="jre${MAJOR}-ohos-$ARCH"
 STAGE="$WORK_DIR/stage/$PACK_NAME"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 cp -a "$IMAGE/." "$STAGE/"
+
+# MC4HOS launches games, it does not compile Java. Drop the developer payload
+# (module archives, sources, demos, headers) so the pack stays a runtime.
+rm -rf "$STAGE/jmods" "$STAGE/demo" "$STAGE/man" "$STAGE/include"
+rm -f "$STAGE/lib/src.zip" "$STAGE/lib/ct.sym"
 
 for f in LICENSE ADDITIONAL_LICENSE_INFO ASSEMBLY_EXCEPTION; do
   [ -f "$SRC/$f" ] && cp "$SRC/$f" "$STAGE/"
@@ -354,14 +400,14 @@ done
 mkdir -p "$STAGE/legal/amcl-native"
 cp "$OHOS_NATIVE/NOTICE.txt" "$STAGE/legal/amcl-native/NOTICE.txt"
 cat > "$STAGE/MC4HOS-RUNTIME-NOTICE.txt" <<NOTICE
-MC4HOS x86_64 OpenJDK runtime pack
+MC4HOS OpenJDK runtime pack ($ARCH)
 
 OpenJDK ${MAJOR}u is licensed under GPLv2 with the Classpath Exception.
 Upstream source: $SRC_REPO
 Upstream commit: $SRC_COMMIT
 
 OHOS patches, stub headers, and the C++ ABI facade were obtained from the
-build-inputs archive pinned in openharmony-jdk/build-inputs.lock.json.
+build-inputs archive pinned in build-inputs.lock.json.
 The archive is GPLv2+CE material and is not part of this repository.
 
 The pack also contains libc++_shared.so and NOTICE.txt from the HarmonyOS
@@ -380,8 +426,8 @@ PACK_URL=""
 if [ -n "$RELEASE_BASE" ]; then
   PACK_URL="${RELEASE_BASE%/}/$PACK_NAME.zip"
 fi
-python3 "$SCRIPT_DIR/write_catalog.py" --major "$MAJOR" --zip "$ZIP" \
-  --out "$OUT_DIR/runtime-catalog-$MAJOR.json" --url "$PACK_URL"
+python3 "$SCRIPT_DIR/write_catalog.py" --major "$MAJOR" --arch "$ARCH" --zip "$ZIP" \
+  --out "$OUT_DIR/runtime-catalog-$MAJOR-$ARCH.json" --url "$PACK_URL"
 
 echo ""
 echo "=== DONE ==="

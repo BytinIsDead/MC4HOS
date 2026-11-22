@@ -202,6 +202,9 @@ jobs:
             --dest entry/src/main/resources/rawfile/jvm
           ls -la entry/src/main/resources/rawfile/jvm || true
 
+      - name: Package JRE native libraries
+        run: python3 scripts/bundle_jre_natives.py
+
       - name: Build bridge jar
         run: python3 scripts/build_bridge_jar.py
 
@@ -214,6 +217,10 @@ jobs:
           find entry/build -name "*.hap" -exec cp {} out/ \;
           unzip -l out/*.hap | grep -q "rawfile/bridge/mc4hos-bridge.jar" \
             || { echo "::error::HAP is missing rawfile/bridge/mc4hos-bridge.jar"; exit 1; }
+          for abi in arm64-v8a x86_64; do
+            unzip -l out/*.hap | grep -q "libs/$abi/libjvm.so" \
+              || { echo "::error::HAP is missing libs/$abi/libjvm.so"; exit 1; }
+          done
           ls -la out
 
       - name: Upload HAP artifact

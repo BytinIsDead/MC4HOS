@@ -9,7 +9,7 @@
 
 import { MicrosoftAuth } from '../auth/MicrosoftAuth';
 import { AccountStore } from '../auth/AccountStore';
-import { DeviceCodeResponse, AuthStateUpdate } from '../auth/AuthModels';
+import { DeviceCodeResponse, DeviceFlowStart, AuthStateUpdate } from '../auth/AuthModels';
 import {
   KEY_ACCOUNT_NAME, KEY_ACCOUNT_UUID, KEY_ACCOUNT_XUID, KEY_ACCOUNT_READY
 } from '../common/AppState';
@@ -40,12 +40,15 @@ export struct AccountsPage {
     this.userCode = '';
     this.verificationUri = '';
     try {
-      const device: DeviceCodeResponse | null = await MicrosoftAuth.beginDeviceFlow();
-      if (device === null) {
-        this.authMessage = 'Device code request failed. Configure an Azure client id in Settings.';
+      const start: DeviceFlowStart = await MicrosoftAuth.beginDeviceFlow();
+      if (start.device === null) {
+        this.authMessage = start.error.length > 0
+          ? start.error
+          : 'Device code request failed.';
         this.authBusy = false;
         return;
       }
+      const device: DeviceCodeResponse = start.device;
       this.userCode = device.userCode;
       this.verificationUri = device.verificationUri;
       const result = await MicrosoftAuth.pollAndAuthorize(device,
@@ -53,7 +56,9 @@ export struct AccountsPage {
           this.authMessage = update.message;
         });
       if (result === null) {
-        this.authMessage = 'Sign-in did not complete.';
+        if (this.authMessage.length === 0 || this.authMessage === 'Waiting for authorization…') {
+          this.authMessage = 'Sign-in did not complete.';
+        }
         this.authBusy = false;
         return;
       }

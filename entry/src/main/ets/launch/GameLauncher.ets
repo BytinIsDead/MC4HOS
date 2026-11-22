@@ -102,7 +102,8 @@ export class GameLauncher {
     const runtime = await JavaRuntimeManager.ensureAnyBundled();
     if (runtime === null) {
       GameLauncher.setPhase('failed',
-        'No Java runtime installed — deploy a runtime pack (docs/NATIVES.md §1)');
+        `No Java ${JavaRuntimeManager.bundledMajor()} runtime available — the HAP ` +
+        'was built without the bundled runtime pack');
       return false;
     }
     const bridgeJar: string = `${Paths.base()}/bridge/mc4hos-bridge.jar`;
@@ -113,14 +114,19 @@ export class GameLauncher {
     }
     const nativeLibDirs: Array<string> =
       JavaRuntimeManager.nativeLibraryDirs(runtime.homePath);
-    if (Paths.hapNativeLibraryDir().length > 0) {
-      nativeLibDirs.push(Paths.hapNativeLibraryDir());
-    }
     const config: NativeLaunchConfig = {
       javaHome: runtime.homePath,
       classPath: bridgeJar,
       nativesDirs: nativeLibDirs.join(':'),
-      jvmOptions: ['-Xmx512M', '-Xms64M'],
+      // Mirror the descriptors the game launch path sets so the self-test
+      // validates the same Java-visible environment.
+      jvmOptions: [
+        '-Xmx512M',
+        '-Xms64M',
+        `-Dmc4hos.natives.dir=${nativeLibDirs.join(':')}`,
+        `-Dmc4hos.game.dir=${Paths.gameDir()}`,
+        `-Dmc4hos.assets.dir=${Paths.assetsDir()}`
+      ],
       mainClass: 'org.mc4hos.bridge.SelfTest',
       gameArgs: [],
       workingDir: Paths.gameDir(),
@@ -209,8 +215,11 @@ export class GameLauncher {
         `Ensuring Java ${version.javaMajorVersion} runtime`);
       const runtime = await JavaRuntimeManager.ensureRuntime(version.javaMajorVersion);
       if (runtime === null) {
-        GameLauncher.setPhase('failed',
-          `No Java ${version.javaMajorVersion} runtime installed — see docs/NATIVES.md`);
+        const required: number = version.javaMajorVersion;
+        const bundled: number = JavaRuntimeManager.bundledMajor();
+        GameLauncher.setPhase('failed', required > bundled
+          ? `This build runs games on Java ${bundled}; Java ${required} is not supported yet`
+          : `No Java ${required} runtime installed — see docs/NATIVES.md`);
         return false;
       }
 

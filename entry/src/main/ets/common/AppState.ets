@@ -8,13 +8,12 @@
  */
 
 /**
- * Microsoft OAuth application (client) id. This is a PUBLIC CLIENT id —
- * it is not a secret; every distribution registers its own Azure AD app
- * (docs/BUILD.md §7) and bakes it here or overrides it on the Settings
- * page. Device-code flow needs no client secret.
+ * Microsoft OAuth application (client) id, compiled into the app. This is a
+ * PUBLIC CLIENT id — it is not a secret, and device-code flow needs no client
+ * secret. The registration must accept personal Microsoft accounts and allow
+ * public client flows; see docs/BUILD.md §7 before changing it.
  */
-export const DEFAULT_AZURE_CLIENT_ID: string =
-  '739dbf62-26b3-4b63-aa89-e5f5baef2a5b';
+export const AZURE_CLIENT_ID: string = '739dbf62-26b3-4b63-aa89-e5f5baef2a5b';
 
 /**
  * Global, UI-bindable launch settings. Values live in AppStorage so any page

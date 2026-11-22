@@ -16,11 +16,14 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const srcRoot = path.resolve(here, '../../entry/src/main/ets/core');
+const commonRoot = path.resolve(here, '../../entry/src/main/ets/common');
 const buildRoot = path.resolve(here, '../.build');
 const outRoot = path.join(buildRoot, 'core');
+const commonOut = path.join(buildRoot, 'common');
 
 fs.rmSync(buildRoot, { recursive: true, force: true });
 fs.mkdirSync(outRoot, { recursive: true });
+fs.mkdirSync(commonOut, { recursive: true });
 fs.writeFileSync(path.join(buildRoot, 'package.json'), '{"type":"module"}\n');
 
 function walk(dir) {
@@ -51,3 +54,10 @@ for (const file of files) {
 }
 
 console.log(`core: ${files.length} module(s) -> ${path.relative(process.cwd(), outRoot)}`);
+
+// Common helpers imported by core modules must be resolvable from .build too.
+for (const name of ['JsonReader.ets']) {
+  const source = fs.readFileSync(path.join(commonRoot, name), 'utf8');
+  fs.writeFileSync(path.join(commonOut, name.replace(/\.ets$/, '.ts')), source);
+}
+

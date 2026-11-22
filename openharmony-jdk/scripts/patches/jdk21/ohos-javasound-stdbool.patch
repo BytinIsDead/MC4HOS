@@ -1,0 +1,12 @@
+diff --git a/src/java.desktop/linux/native/libjsound/ports_ohos.h b/src/java.desktop/linux/native/libjsound/ports_ohos.h
+index 67872e3..3694480 100644
+--- a/src/java.desktop/linux/native/libjsound/ports_ohos.h
++++ b/src/java.desktop/linux/native/libjsound/ports_ohos.h
+@@ -8,6 +8,7 @@
+ #define AMCL_PORTS_OHOS_H
+ #include <stddef.h>
+ #include <stdint.h>
++#include <stdbool.h>
+ 
+ enum AmclPortsResult {
+     AMCL_PORTS_OK = 0,

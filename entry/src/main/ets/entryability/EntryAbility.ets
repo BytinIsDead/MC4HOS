@@ -11,7 +11,6 @@ import UIAbility from '@ohos.app.ability.UIAbility';
 import AbilityConstant from '@ohos.app.ability.AbilityConstant';
 import Want from '@ohos.app.ability.Want';
 import window from '@ohos.window';
-import preferences from '@ohos.data.preferences';
 import hilog from '@ohos.hilog';
 import util from '@ohos.util';
 import { Logger } from '../common/Logger';
@@ -21,15 +20,12 @@ import { AccountStore } from '../auth/AccountStore';
 import { MicrosoftAuth } from '../auth/MicrosoftAuth';
 import { ControlLayoutStore } from '../ui/ControlLayout';
 import { GameLauncher } from '../launch/GameLauncher';
-import { KEY_ACCOUNT_NAME, KEY_ACCOUNT_UUID, KEY_ACCOUNT_XUID, KEY_ACCOUNT_READY, DEFAULT_AZURE_CLIENT_ID } from '../common/AppState';
+import { KEY_ACCOUNT_NAME, KEY_ACCOUNT_UUID, KEY_ACCOUNT_XUID, KEY_ACCOUNT_READY, AZURE_CLIENT_ID } from '../common/AppState';
 
 /**
  * Entry ability: wires up the sandbox layout, secure stores, the native log
  * pump and the persisted account state before loading the main page.
  */
-
-const PREF_NAME: string = 'mc4hos.settings';
-const KEY_AZURE_CLIENT_ID: string = 'azureClientId';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -72,10 +68,8 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate<string>(KEY_ACCOUNT_XUID, profile.xuid);
       AppStorage.setOrCreate<boolean>(KEY_ACCOUNT_READY, true);
     }
-    // Restore the Azure client id configured on the Settings page.
-    const prefs = await preferences.getPreferences(this.context, { name: PREF_NAME });
-    const clientId: string = await prefs.get(KEY_AZURE_CLIENT_ID, DEFAULT_AZURE_CLIENT_ID) as string;
-    MicrosoftAuth.configure(clientId);
+    // The Azure client id is compiled in; there is no user-facing override.
+    MicrosoftAuth.configure(AZURE_CLIENT_ID);
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
@@ -92,5 +86,3 @@ export default class EntryAbility extends UIAbility {
     hilog.info(0x4D43, 'MC4HOS', 'EntryAbility onDestroy');
   }
 }
-
-export { PREF_NAME, KEY_AZURE_CLIENT_ID };
