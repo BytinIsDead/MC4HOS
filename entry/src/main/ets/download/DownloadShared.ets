@@ -106,10 +106,20 @@ export async function sha256HexOf(path: string): Promise<string> {
   return digestHexOf(path, 'SHA256');
 }
 
-/** Verify (or, when no checksum is known, pass through) a downloaded file. */
+/** Verify a downloaded file against every checksum/size supplied by metadata. */
 export async function verifyChecksum(path: string, spec: DownloadSpec): Promise<string | null> {
+  const stat: fs.Stat = fs.statSync(path);
+  if (stat.size <= 0) {
+    return 'empty file';
+  }
+  if (spec.sizeBytes !== undefined && spec.sizeBytes > 0 && stat.size !== spec.sizeBytes) {
+    return `size mismatch: expected ${spec.sizeBytes}, got ${stat.size}`;
+  }
   if (spec.sha1 === undefined || spec.sha1.length === 0) {
-    return null;
+    return spec.sizeBytes === undefined ? 'no checksum or size metadata' : null;
+  }
+  if (!/^[0-9a-f]{40}$/i.test(spec.sha1)) {
+    return `invalid sha1 metadata: ${spec.sha1}`;
   }
   const actual: string = await sha1HexOf(path);
   if (actual !== spec.sha1.toLowerCase()) {

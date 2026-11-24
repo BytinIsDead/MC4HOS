@@ -31,6 +31,7 @@ export async function downloadOne(spec: DownloadSpec): Promise<DownloadResult> {
   let received: number = 0;
   let total: number = 0;
   let lastReported: number = 0;
+  let writeError: string = '';
   const reportStep: number = 1024 * 1024;
   const client: http.HttpRequest = http.createHttp();
   try {
@@ -59,15 +60,23 @@ export async function downloadOne(spec: DownloadSpec): Promise<DownloadResult> {
       }
     });
     client.on('dataReceive', (chunk: ArrayBuffer) => {
-      if (fd >= 0 && chunk.byteLength > 0) {
-        fs.writeSync(fd, chunk, { offset: received });
-        received += chunk.byteLength;
-        // Throttle UI events: assets are often many small files and a
-        // per-chunk emit floods the emitter queue.
-        if (received - lastReported >= reportStep || (total > 0 && received >= total)) {
-          lastReported = received;
-          emitProgress({ label: specLabel(spec), received: received, total: total,
-            finished: false, failed: false });
+      if (fd >= 0 && chunk.byteLength > 0 && writeError.length === 0) {
+        try {
+          const written: number = fs.writeSync(fd, chunk, { offset: received });
+          if (written !== chunk.byteLength) {
+            writeError = `short write: expected ${chunk.byteLength}, got ${written}`;
+          } else {
+            received += chunk.byteLength;
+            // Throttle UI events: assets are often many small files and a
+            // per-chunk emit floods the emitter queue.
+            if (received - lastReported >= reportStep || (total > 0 && received >= total)) {
+              lastReported = received;
+              emitProgress({ label: specLabel(spec), received: received, total: total,
+                finished: false, failed: false });
+            }
+          }
+        } catch (err) {
+          writeError = `${(err as Error).name}: ${(err as Error).message}`;
         }
       }
     });
@@ -90,6 +99,9 @@ export async function downloadOne(spec: DownloadSpec): Promise<DownloadResult> {
         readTimeout: 120000
       } as http.HttpRequestOptions);
       await streamDone;
+      if (writeError.length > 0) {
+        throw new Error(writeError);
+      }
       fs.closeSync(fd);
       fd = -1;
       client.destroy();

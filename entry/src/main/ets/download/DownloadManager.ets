@@ -98,7 +98,14 @@ export class DownloadManager {
     const failed: Array<DownloadResult> = [];
     Logger.info(TAG, `downloading ${specs.length} files, concurrency ${concurrency}`);
 
-    const queue: Array<DownloadSpec> = specs.slice();
+    const queue: Array<DownloadSpec> = [];
+    const destinations: Set<string> = new Set();
+    for (const spec of specs) {
+      if (!destinations.has(spec.destPath)) {
+        destinations.add(spec.destPath);
+        queue.push(spec);
+      }
+    }
     const workers: Array<Promise<void>> = [];
     for (let w = 0; w < Math.min(concurrency, queue.length); w++) {
       workers.push((async () => {

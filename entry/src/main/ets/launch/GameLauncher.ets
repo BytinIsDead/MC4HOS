@@ -209,6 +209,7 @@ export class GameLauncher {
         GameLauncher.setPhase('failed', 'Asset download failed');
         return false;
       }
+      GameInstaller.markInstalled(version);
 
       // 4. runtime
       GameLauncher.setPhase('preparing_runtime',

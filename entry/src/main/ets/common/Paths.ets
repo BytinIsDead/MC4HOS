@@ -65,6 +65,10 @@ export class Paths {
     return `${Paths.versionDir(versionId)}/${versionId}.json`;
   }
 
+  public static installMarkerPath(versionId: string): string {
+    return `${Paths.versionDir(versionId)}/.installed`;
+  }
+
   public static manifestCachePath(): string {
     return `${Paths.versionsDir()}/version_manifest_v2.json`;
   }

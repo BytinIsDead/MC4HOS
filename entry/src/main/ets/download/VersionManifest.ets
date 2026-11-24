@@ -41,6 +41,7 @@ export interface RuleSet {
   action: string;
   osName?: string;
   osArch?: string;
+  osVersion?: string;
   features?: JsonObj;
 }
 
@@ -113,31 +114,36 @@ export class VersionManifest {
    */
   public async load(refreshNetwork: boolean = true): Promise<Array<VersionEntry>> {
     if (fs.accessSync(Paths.manifestCachePath())) {
-      const cached: string = fs.readTextSync(Paths.manifestCachePath());
-      this.parseManifest(cached);
-      Logger.info(TAG, `manifest cache: ${this.entries.length} versions`);
+      try {
+        const cached: string = fs.readTextSync(Paths.manifestCachePath());
+        if (this.parseManifest(cached)) {
+          Logger.info(TAG, `manifest cache: ${this.entries.length} versions`);
+        }
+      } catch (err) {
+        Logger.warn(TAG, `manifest cache unreadable: ${(err as Error).message}`);
+      }
     }
     if (refreshNetwork || this.entries.length === 0) {
       const resp = await getJson(MANIFEST_URL);
-      if (resp.ok) {
+      if (resp.ok && this.parseManifest(resp.body)) {
         Paths.writeTextFileSync(Paths.manifestCachePath(), resp.body);
-        this.parseManifest(resp.body);
         Logger.info(TAG, `manifest fetched: ${this.entries.length} versions`);
-      } else if (this.entries.length === 0) {
-        Logger.error(TAG, 'manifest unavailable offline');
+      } else {
+        Logger.warn(TAG, `manifest refresh failed: HTTP ${resp.code}`);
       }
+    }
+    if (this.entries.length === 0) {
+      throw new Error('Minecraft version manifest is unavailable');
     }
     return this.entries;
   }
 
-  private parseManifest(body: string): void {
+  private parseManifest(body: string): boolean {
     const root: JsonObj | null = parseJson(body);
-    if (root === null) {
-      return;
-    }
-    const versions: Array<Object> | null = getArr(root, 'versions');
-    if (versions === null) {
-      return;
+    const versions: Array<Object> | null = root === null ? null : getArr(root, 'versions');
+    const latest: JsonObj | null = root === null ? null : getObj(root, 'latest');
+    if (versions === null || latest === null || getStr(latest, 'release').length === 0) {
+      return false;
     }
     const parsed: Array<VersionEntry> = [];
     for (const item of versions) {
@@ -145,44 +151,65 @@ export class VersionManifest {
       if (v === null) {
         continue;
       }
+      const id: string = getStr(v, 'id');
+      const url: string = getStr(v, 'url');
+      if (id.length === 0 || url.length === 0) {
+        continue;
+      }
       parsed.push({
-        id: getStr(v, 'id'),
+        id: id,
         type: getStr(v, 'type'),
-        url: getStr(v, 'url'),
+        url: url,
         releaseTime: getStr(v, 'releaseTime')
       });
     }
+    if (parsed.length === 0) {
+      return false;
+    }
     this.entries = parsed;
+    return true;
   }
 
   /** Fetch (and cache) the per-version JSON descriptor. */
-  public async fetchVersion(versionId: string): Promise<VersionJson | null> {
-    const cached: VersionJson | null = this.cache.get(versionId) ?? null;
-    if (cached !== null) {
+  public async fetchVersion(versionId: string, forceNetwork: boolean = false): Promise<VersionJson | null> {
+    const cached: VersionJson | null = this.cachedVersion(versionId);
+    if (!forceNetwork && cached !== null) {
       return cached;
     }
     const entry: VersionEntry | undefined =
       this.entries.find((e: VersionEntry) => e.id === versionId);
     const jsonPath: string = Paths.versionJsonPath(versionId);
-    let body: string = '';
-    if (fs.accessSync(jsonPath)) {
-      body = fs.readTextSync(jsonPath);
-    } else if (entry !== undefined && entry.url.length > 0) {
-      const resp = await getJson(entry.url);
-      if (!resp.ok) {
-        Logger.error(TAG, `version json fetch failed for ${versionId}: HTTP ${resp.code}`);
-        return null;
+    if (!forceNetwork && fs.accessSync(jsonPath)) {
+      try {
+        const parsed: VersionJson | null =
+          VersionManifest.parseVersionJson(fs.readTextSync(jsonPath), versionId);
+        if (parsed !== null) {
+          this.cache.set(versionId, parsed);
+          return parsed;
+        }
+      } catch (err) {
+        Logger.warn(TAG, `cached version ${versionId} unreadable: ${(err as Error).message}`);
       }
-      Paths.writeTextFileSync(jsonPath, resp.body);
-      body = resp.body;
     }
-    if (body.length === 0) {
+    if (entry === undefined || entry.url.length === 0) {
+      Logger.error(TAG, `version ${versionId} is absent from the manifest`);
       return null;
     }
-    const parsed: VersionJson | null = VersionManifest.parseVersionJson(body, versionId);
-    if (parsed !== null) {
-      this.cache.set(versionId, parsed);
+    const resp = await getJson(entry.url);
+    if (!resp.ok) {
+      Logger.error(TAG, `version json fetch failed for ${versionId}: HTTP ${resp.code}`);
+      return null;
     }
+    const parsed: VersionJson | null = VersionManifest.parseVersionJson(resp.body, versionId);
+    if (parsed === null) {
+      Logger.error(TAG, `version json for ${versionId} is invalid`);
+      return null;
+    }
+    const part: string = jsonPath + '.part';
+    Paths.ensureDir(Paths.versionDir(versionId));
+    Paths.writeTextFileSync(part, resp.body);
+    fs.renameSync(part, jsonPath);
+    this.cache.set(versionId, parsed);
     return parsed;
   }
 
@@ -195,6 +222,9 @@ export class VersionManifest {
     const id: string = getStr(root, 'id', fallbackId);
     const type: string = getStr(root, 'type', 'release');
     const mainClass: string = getStr(root, 'mainClass');
+    if (id.length === 0 || mainClass.length === 0 || getArr(root, 'libraries') === null) {
+      return null;
+    }
 
     // client jar download
     let client: ClientDownload | null = null;
@@ -286,6 +316,10 @@ export class VersionManifest {
       assetIndexUrl = getStr(assetIndexObj, 'url');
       assetIndexSha1 = getStr(assetIndexObj, 'sha1');
     }
+    if (assetIndexId.length === 0 || assetIndexUrl.length === 0 ||
+      !/^[0-9a-f]{40}$/i.test(assetIndexSha1)) {
+      return null;
+    }
 
     // java runtime requirement
     let javaMajor: number = 8;
@@ -353,6 +387,7 @@ export class VersionManifest {
       if (os !== null) {
         rs.osName = getStr(os, 'name');
         rs.osArch = getStr(os, 'arch');
+        rs.osVersion = getStr(os, 'version');
       }
       const features: JsonObj | null = getObj(rule, 'features');
       if (features !== null) {

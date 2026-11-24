@@ -41,12 +41,10 @@ export class GameInstaller {
    */
   public static async ensureInstalled(version: VersionJson,
     onProgress?: (progress: InstallProgress) => void): Promise<boolean> {
+    GameInstaller.clearInstallMarker(version.id);
     const specs: Array<DownloadSpec> = GameInstaller.buildSpecs(version);
     Logger.info(TAG, `install ${version.id}: ${specs.length} files to verify/download`);
-    if (specs.length === 0) {
-      return true;
-    }
-    if (!GameInstaller.hasFreeSpace(specs)) {
+    if (specs.length === 0 || !GameInstaller.hasFreeSpace(specs)) {
       return false;
     }
     let finished: number = 0;
@@ -76,29 +74,35 @@ export class GameInstaller {
     const specs: Array<DownloadSpec> = [];
 
     // 1. client jar
-    if (version.client !== null && version.client.url.length > 0) {
-      specs.push({
-        url: version.client.url,
-        destPath: Paths.clientJarPath(version.id),
-        sha1: version.client.sha1,
-        sizeBytes: version.client.sizeBytes,
-        label: `${version.id}.jar`
-      });
+    if (version.client === null || version.client.url.length === 0 ||
+      !validHash(version.client.sha1) || version.client.sizeBytes <= 0) {
+      throw new Error(`Version ${version.id} has no valid client download metadata`);
     }
+    specs.push({
+      url: version.client.url,
+      destPath: Paths.clientJarPath(version.id),
+      sha1: version.client.sha1,
+      sizeBytes: version.client.sizeBytes,
+      label: `${version.id}.jar`
+    });
 
     // 2. libraries — artifact jars only. Libraries whose rules exclude our
-    //    platform are filtered by the same rule engine used at launch time
-    //    (imported here to keep selection logic in one place).
+    //    platform are filtered by the same rule engine used at launch time.
     for (const lib of version.libraries) {
       if (!GameInstaller.rulesAllow(lib.rules)) {
         continue;
       }
-      if (lib.download === null || lib.download.url.length === 0) {
-        continue;
+      if (lib.download === null) {
+        if (lib.natives !== null) {
+          continue;
+        }
+        throw new Error(`Required library ${lib.name} has no artifact download`);
       }
       const coordParts: Array<string> = lib.download.coord.split(':');
-      if (coordParts.length !== 3) {
-        continue;
+      if (coordParts.length !== 3 || coordParts.some((part: string) => part.length === 0) ||
+        lib.download.url.length === 0 || !validHash(lib.download.sha1) ||
+        lib.download.sizeBytes <= 0) {
+        throw new Error(`Required library ${lib.name} has invalid download metadata`);
       }
       const dest: string = Paths.libraryPath(coordParts[0], coordParts[1], coordParts[2]);
       specs.push({
@@ -120,13 +124,22 @@ export class GameInstaller {
    */
   public static async ensureAssets(version: VersionJson,
     onProgress?: (progress: InstallProgress) => void): Promise<string> {
-    if (version.assetIndexId.length === 0) {
+    if (version.assetIndexId.length === 0 || !validHash(version.assetIndexSha1)) {
+      Logger.error(TAG, `asset index ${version.assetIndexId} has invalid metadata`);
       return '';
     }
+    GameInstaller.clearInstallMarker(version.id);
     const indexPath: string = Paths.assetIndexPath(version.assetIndexId);
-    if (!fsAccess(indexPath)) {
-      // Modern metadata carries the complete index URL; older cached
-      // descriptors may not, in which case the index cannot be located.
+    let root: JsonObj | null = null;
+    if (fsAccess(indexPath)) {
+      const cached: string = fsReadText(indexPath);
+      root = parseJson(cached);
+      if (root === null || await sha1HexOf(indexPath) !== version.assetIndexSha1.toLowerCase()) {
+        fs.unlinkSync(indexPath);
+        root = null;
+      }
+    }
+    if (root === null) {
       if (version.assetIndexUrl.length === 0) {
         Logger.error(TAG, `asset index ${version.assetIndexId} has no URL`);
         return '';
@@ -136,70 +149,92 @@ export class GameInstaller {
         Logger.error(TAG, `asset index fetch failed: HTTP ${resp.code}`);
         return '';
       }
-      Paths.ensureDir(Paths.indexesDir());
-      Paths.writeTextFileSync(indexPath, resp.body);
-      if (version.assetIndexSha1.length > 0) {
-        const actual: string = await sha1HexOf(indexPath);
-        if (actual !== version.assetIndexSha1.toLowerCase()) {
-          fs.unlinkSync(indexPath);
-          Logger.error(TAG, `asset index sha1 mismatch: expected ${version.assetIndexSha1}`);
-          return '';
-        }
+      const part: string = indexPath + '.part';
+      Paths.writeTextFileSync(part, resp.body);
+      const actual: string = await sha1HexOf(part);
+      if (actual !== version.assetIndexSha1.toLowerCase() || parseJson(resp.body) === null) {
+        fs.unlinkSync(part);
+        Logger.error(TAG, `asset index ${version.assetIndexId} failed validation`);
+        return '';
       }
+      fs.renameSync(part, indexPath);
+      root = parseJson(resp.body);
     }
-
-    const root: JsonObj | null = parseJson(fsReadText(indexPath));
-    if (root === null) {
-      return '';
-    }
-    const objects: JsonObj | null = getObj(root, 'objects');
-    if (objects === null) {
+    const objects: JsonObj | null = root === null ? null : getObj(root, 'objects');
+    if (objects === null || Object.keys(objects).length === 0) {
+      Logger.error(TAG, `asset index ${version.assetIndexId} has no objects`);
       return '';
     }
 
-    const specs: Array<DownloadSpec> = [];
+    const byHash: Map<string, DownloadSpec> = new Map();
     for (const key of Object.keys(objects)) {
       const entry: JsonObj | null = getObj(objects, key);
       if (entry === null) {
-        continue;
-      }
-      const hash: string = getStr(entry, 'hash');
-      const size: number = getNum(entry, 'size');
-      if (hash.length !== 40) {
-        continue;
-      }
-      specs.push({
-        url: `${DEFAULT_ASSETS_BASE}/${hash.substring(0, 2)}/${hash}`,
-        destPath: Paths.assetObjectPath(hash),
-        sha1: hash,
-        sizeBytes: size,
-        label: key
-      });
-    }
-    Logger.info(TAG, `assets: ${specs.length} objects for index ${version.assetIndexId}`);
-
-    if (specs.length > 0) {
-      if (!GameInstaller.hasFreeSpace(specs)) {
+        Logger.error(TAG, `asset index ${version.assetIndexId} has invalid object ${key}`);
         return '';
       }
-      let finished: number = 0;
-      const result: DownloadBatchResult = await DownloadManagerInstance.downloadAll(specs, {
-        onItemFinished: (r) => {
-          finished++;
-          if (onProgress !== undefined) {
-            onProgress({
-              current: finished,
-              total: specs.length,
-              currentFile: r.spec.label ?? ''
-            });
-          }
-        }
-      });
-      if (result.failed.length > 0) {
-        Logger.error(TAG, `${result.failed.length} asset objects failed`);
+      const hash: string = getStr(entry, 'hash').toLowerCase();
+      const size: number = getNum(entry, 'size');
+      if (!validHash(hash) || size <= 0) {
+        Logger.error(TAG, `asset index ${version.assetIndexId} has invalid object ${key}`);
+        return '';
+      }
+      const previous: DownloadSpec | undefined = byHash.get(hash);
+      if (previous !== undefined && previous.sizeBytes !== size) {
+        Logger.error(TAG, `asset index ${version.assetIndexId} reuses ${hash} with different sizes`);
+        return '';
+      }
+      if (previous === undefined) {
+        byHash.set(hash, {
+          url: `${DEFAULT_ASSETS_BASE}/${hash.substring(0, 2)}/${hash}`,
+          destPath: Paths.assetObjectPath(hash),
+          sha1: hash,
+          sizeBytes: size,
+          label: key
+        });
       }
     }
+    const specs: Array<DownloadSpec> = Array.from(byHash.values());
+    Logger.info(TAG, `assets: ${specs.length} objects for index ${version.assetIndexId}`);
+
+    if (!GameInstaller.hasFreeSpace(specs)) {
+      return '';
+    }
+    let finished: number = 0;
+    const result: DownloadBatchResult = await DownloadManagerInstance.downloadAll(specs, {
+      onItemFinished: (r) => {
+        finished++;
+        if (onProgress !== undefined) {
+          onProgress({
+            current: finished,
+            total: specs.length,
+            currentFile: r.spec.label ?? ''
+          });
+        }
+      }
+    });
+    if (result.failed.length > 0) {
+      Logger.error(TAG, `${result.failed.length} asset objects failed`);
+      return '';
+    }
     return version.assetIndexId;
+  }
+
+  public static isInstalled(versionId: string): boolean {
+    return fsAccess(Paths.installMarkerPath(versionId)) &&
+      fsAccess(Paths.clientJarPath(versionId)) &&
+      fsReadText(Paths.installMarkerPath(versionId)).length > 0;
+  }
+
+  public static markInstalled(version: VersionJson): void {
+    Paths.writeTextFileSync(Paths.installMarkerPath(version.id), version.assetIndexId);
+  }
+
+  private static clearInstallMarker(versionId: string): void {
+    const marker: string = Paths.installMarkerPath(versionId);
+    if (fsAccess(marker)) {
+      fs.unlinkSync(marker);
+    }
   }
 
   /**
@@ -209,7 +244,16 @@ export class GameInstaller {
   private static hasFreeSpace(specs: Array<DownloadSpec>): boolean {
     let needed: number = 0;
     for (const spec of specs) {
-      if (spec.sizeBytes !== undefined && spec.sizeBytes > 0 && !fsAccess(spec.destPath)) {
+      if (spec.sizeBytes === undefined || spec.sizeBytes <= 0) {
+        continue;
+      }
+      let presentSize: number = -1;
+      try {
+        presentSize = fs.statSync(spec.destPath).size;
+      } catch (err) {
+        presentSize = -1;
+      }
+      if (presentSize !== spec.sizeBytes) {
         needed += spec.sizeBytes;
       }
     }
@@ -232,12 +276,11 @@ export class GameInstaller {
     return true;
   }
 
-  /**
-   * Rule evaluation used for downloads. The launcher maps its POSIX runtime
-   * onto the "linux" OS family; arm64/x86_64 are both treated as 64-bit.
-   */
+  /** Rule evaluation used for both downloads and launch classpaths. */
   public static rulesAllow(rules: Array<RuleSet>): boolean {
     let allowed: boolean = true;
+    const abi: string = Paths.deviceAbi();
+    const arch: string = abi === 'arm64-v8a' ? 'arm64' : abi;
     for (const rule of rules) {
       const featureKeys: Array<string> = rule.features !== undefined ? Object.keys(rule.features) : [];
       if (featureKeys.length > 0) {
@@ -251,7 +294,10 @@ export class GameInstaller {
         matches = matches && rule.osName === 'linux';
       }
       if (rule.osArch !== undefined && rule.osArch.length > 0) {
-        matches = matches && (rule.osArch === 'arm64' || rule.osArch === 'x86_64');
+        matches = matches && rule.osArch === arch;
+      }
+      if (rule.osVersion !== undefined && rule.osVersion.length > 0) {
+        matches = false;
       }
       if (matches) {
         allowed = rule.action === 'allow';
@@ -259,6 +305,10 @@ export class GameInstaller {
     }
     return allowed;
   }
+}
+
+function validHash(hash: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(hash);
 }
 
 // Small fs helpers kept out of the class for clarity.

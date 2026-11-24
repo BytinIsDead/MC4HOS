@@ -7,11 +7,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import fs from '@ohos.file.fs';
 import { VersionEntry, VersionManifestInstance, VersionJson } from '../download/VersionManifest';
 import { GameInstaller } from '../download/GameInstaller';
 import { DownloadManager } from '../download/DownloadManager';
-import { Paths } from '../common/Paths';
 import { KEY_SELECTED_VERSION } from '../common/AppState';
 
 /**
@@ -24,6 +22,7 @@ import { KEY_SELECTED_VERSION } from '../common/AppState';
 export struct VersionsPage {
   @StorageLink(KEY_SELECTED_VERSION) selectedVersion: string = '';
   @State entries: Array<VersionEntry> = [];
+  @State installedVersions: Array<string> = [];
   @State filterReleasesOnly: boolean = true;
   @State statusText: string = '';
   @State busy: boolean = false;
@@ -33,6 +32,9 @@ export struct VersionsPage {
   aboutToAppear(): void {
     VersionManifestInstance.load().then((entries: Array<VersionEntry>) => {
       this.entries = entries;
+      this.refreshInstalled();
+    }).catch((err: Error) => {
+      this.statusText = `Version list unavailable: ${err.message}`;
     });
     this.unsubscribeProgress = DownloadManager.subscribeProgress(
       (label: string, received: number, total: number,
@@ -54,7 +56,17 @@ export struct VersionsPage {
   }
 
   private isInstalled(id: string): boolean {
-    return fs.accessSync(Paths.clientJarPath(id));
+    return this.installedVersions.indexOf(id) >= 0;
+  }
+
+  private refreshInstalled(): void {
+    const installed: Array<string> = [];
+    for (const entry of this.entries) {
+      if (GameInstaller.isInstalled(entry.id)) {
+        installed.push(entry.id);
+      }
+    }
+    this.installedVersions = installed;
   }
 
   private async download(version: VersionEntry): Promise<void> {
@@ -64,10 +76,14 @@ export struct VersionsPage {
     this.busy = true;
     this.statusText = `Resolving ${version.id}…`;
     try {
-      const json: VersionJson | null = await VersionManifestInstance.fetchVersion(version.id);
+      const refresh: boolean = GameInstaller.isInstalled(version.id);
+      if (refresh) {
+        await VersionManifestInstance.load(true);
+      }
+      const json: VersionJson | null =
+        await VersionManifestInstance.fetchVersion(version.id, refresh);
       if (json === null) {
         this.statusText = `Could not resolve ${version.id}`;
-        this.busy = false;
         return;
       }
       this.statusText = `Downloading ${version.id}…`;
@@ -80,17 +96,21 @@ export struct VersionsPage {
           this.progressText = `assets ${p.current} / ${p.total}`;
         }) : '';
       if (okFiles && assets.length > 0) {
+        GameInstaller.markInstalled(json);
         this.selectedVersion = version.id;
         this.statusText = `${version.id} installed and selected`;
+        this.refreshInstalled();
       } else {
         this.statusText = `Download incomplete for ${version.id}`;
+        this.refreshInstalled();
       }
     } catch (err) {
       const e = err as Error;
       this.statusText = `Error: ${e.message}`;
+    } finally {
+      this.busy = false;
+      this.progressText = '';
     }
-    this.busy = false;
-    this.progressText = '';
   }
 
   private typeColor(type: string): string {
