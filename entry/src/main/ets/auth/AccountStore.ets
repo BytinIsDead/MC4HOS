@@ -43,13 +43,17 @@ export class AccountStore {
   /** Persist profile + secrets for the active account. */
   public static async saveActiveAccount(profile: AccountProfile, secrets: AuthSecrets): Promise<void> {
     if (AccountStore.prefs === null) {
-      return;
+      throw new Error('Account storage is not initialized');
     }
-    await AccountStore.prefs.put(PREF_KEY_PROFILE, JSON.stringify(profile));
-    await AccountStore.prefs.flush();
+    if (secrets.msAccessToken.length === 0 || secrets.msRefreshToken.length === 0 ||
+      secrets.mcAccessToken.length === 0) {
+      throw new Error('Authentication returned an incomplete token set');
+    }
     await assetSetString(ASSET_ALIAS_MS_ACCESS, secrets.msAccessToken);
     await assetSetString(ASSET_ALIAS_MS_REFRESH, secrets.msRefreshToken);
     await assetSetString(ASSET_ALIAS_MC_TOKEN, secrets.mcAccessToken);
+    await AccountStore.prefs.put(PREF_KEY_PROFILE, JSON.stringify(profile));
+    await AccountStore.prefs.flush();
     Logger.info(TAG, `saved account ${profile.displayName}`);
   }
 
@@ -103,11 +107,14 @@ export class AccountStore {
       Logger.warn(TAG, 'token refresh failed; re-authentication required');
       return null;
     }
+    if (refreshed.mcAccessToken.length === 0) {
+      return null;
+    }
     const updated: AccountProfile = {
       displayName: profile.displayName,
       uuid: profile.uuid,
-      xuid: profile.xuid,
-      mcTokenExpiresAtMs: Date.now() + 86400 * 1000
+      xuid: refreshed.xuid ?? profile.xuid,
+      mcTokenExpiresAtMs: refreshed.mcTokenExpiresAtMs ?? Date.now() + 86400 * 1000
     };
     await AccountStore.saveActiveAccount(updated, refreshed);
     return refreshed.mcAccessToken;
@@ -147,27 +154,19 @@ function u8ToStr(u: Uint8Array): string {
 }
 
 async function assetSetString(alias: string, value: string): Promise<void> {
+  const query: asset.AssetMap = new Map();
+  query.set(asset.Tag.ALIAS, strToU8(alias));
+  const attrs: asset.AssetMap = new Map();
+  attrs.set(asset.Tag.SECRET, strToU8(value));
   try {
-    // Prefer an in-place update when the alias already exists (update takes
-    // the search query and the attribute map as separate arguments).
-    const query: asset.AssetMap = new Map();
-    query.set(asset.Tag.ALIAS, strToU8(alias));
-    const attrs: asset.AssetMap = new Map();
-    attrs.set(asset.Tag.SECRET, strToU8(value));
-    try {
-      await asset.update(query, attrs);
-      return;
-    } catch (notFoundErr) {
-      // fall through to add
-    }
+    await asset.update(query, attrs);
+    return;
+  } catch (notFoundErr) {
     const add: asset.AssetMap = new Map();
     add.set(asset.Tag.ALIAS, strToU8(alias));
     add.set(asset.Tag.SECRET, strToU8(value));
     add.set(asset.Tag.SYNC_TYPE, asset.SyncType.NEVER);
     await asset.add(add);
-  } catch (err) {
-    const e = err as Error;
-    Logger.warn(TAG, `asset set ${alias} failed: ${e.message}`);
   }
 }
 

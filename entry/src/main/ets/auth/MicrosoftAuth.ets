@@ -150,8 +150,8 @@ export class MicrosoftAuth {
       }
       msAccessToken = getStr(json, 'access_token');
       msRefreshToken = getStr(json, 'refresh_token');
-      if (msAccessToken.length === 0) {
-        report('error', 'Token response missing access_token');
+      if (msAccessToken.length === 0 || msRefreshToken.length === 0) {
+        report('error', 'Token response missing access_token or refresh_token');
         return null;
       }
       break;
@@ -179,6 +179,10 @@ export class MicrosoftAuth {
     }
     const xblToken: string = getStr(xbl.json, 'Token');
     const xblUhs: string = MicrosoftAuth.firstUserHash(xbl.json);
+    if (xblToken.length === 0 || xblUhs.length === 0) {
+      report('error', 'Xbox Live returned an incomplete token');
+      return null;
+    }
 
     // --- XSTS token (Minecraft relying party) ---
     report('exchanging_xbl', 'Requesting XSTS ticket…');
@@ -197,7 +201,12 @@ export class MicrosoftAuth {
     }
     const xstsToken: string = getStr(xsts.json, 'Token');
     const xstsUhs: string = MicrosoftAuth.firstUserHash(xsts.json);
+    const xstsXid: string = MicrosoftAuth.firstClaim(xsts.json, 'xid');
     const uhs: string = xstsUhs.length > 0 ? xstsUhs : xblUhs;
+    if (xstsToken.length === 0 || uhs.length === 0 || xstsXid.length === 0) {
+      report('error', 'XSTS returned an incomplete ticket');
+      return null;
+    }
 
     // --- Minecraft services access token ---
     report('exchanging_xbl', 'Signing in to Minecraft services…');
@@ -209,13 +218,9 @@ export class MicrosoftAuth {
       JSON.stringify(loginPayload), acceptHeaders);
     if (!mcResp.ok) {
       Logger.warn(TAG, `Minecraft login failed: HTTP ${mcResp.code} ${mcResp.body}`);
-      let hint: string = '';
-      if (mcResp.body.indexOf('Invalid app registration') >= 0) {
-        hint = ' — this Azure app is not approved for the Minecraft API; ' +
-          'request access at https://aka.ms/AppRegInfo';
-      } else if (mcResp.code === 401) {
-        hint = ' — the account may not own Minecraft: Java Edition';
-      }
+      const hint: string = mcResp.code === 401
+        ? ' — the account may not own Minecraft: Java Edition'
+        : '';
       report('error', `Minecraft login failed: HTTP ${mcResp.code}${hint}`);
       return null;
     }
@@ -225,6 +230,10 @@ export class MicrosoftAuth {
     }
     const mcToken: string = getStr(mcJson, 'access_token');
     const mcExpiresIn: number = getNum(mcJson, 'expires_in', 86400);
+    if (mcToken.length === 0 || mcExpiresIn <= 0) {
+      report('error', 'Minecraft services returned an incomplete token');
+      return null;
+    }
 
     // --- Game profile ---
     report('fetching_profile', 'Fetching profile…');

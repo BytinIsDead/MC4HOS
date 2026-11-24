@@ -19,7 +19,7 @@ export interface AccountProfile {
   displayName: string;
   /** Minecraft game profile UUID (without dashes as returned by the API). */
   uuid: string;
-  /** Xbox user hash from the XSTS ticket. */
+  /** Xbox account identifier (`xid`) from the XSTS ticket. */
   xuid: string;
   /** Epoch milliseconds at which the Minecraft services token expires. */
   mcTokenExpiresAtMs: number;
@@ -30,6 +30,8 @@ export interface AuthSecrets {
   msAccessToken: string;
   msRefreshToken: string;
   mcAccessToken: string;
+  mcTokenExpiresAtMs?: number;
+  xuid?: string;
 }
 
 /** Terminal result of a successful device-code login chain. */
