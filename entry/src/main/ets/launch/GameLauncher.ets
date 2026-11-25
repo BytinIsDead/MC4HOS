@@ -18,7 +18,7 @@ import { VersionManifestInstance } from '../download/VersionManifest';
 import { GameInstaller } from '../download/GameInstaller';
 import { JavaRuntimeManager } from '../download/JavaRuntimeManager';
 import { JvmArgumentBuilder } from './JvmArgumentBuilder';
-import { BuiltLaunch, LaunchContext } from './LaunchConfig';
+import { BuiltLaunch, LaunchContext, REQUIRED_NATIVE_LIBRARIES } from './LaunchConfig';
 import {
   NativeLaunchConfig,
   initialize,
@@ -31,9 +31,9 @@ import {
  * End-to-end launch pipeline:
  *
  *   1. resolve the selected version (manifest + per-version JSON)
- *   2. refresh the Minecraft services token if needed
- *   3. ensure client jar / libraries / assets are installed (idempotent)
- *   4. ensure an embedded JRE with the required major version exists
+ *   2. preflight Java, LWJGL and packaged native compatibility
+ *   3. refresh the Minecraft services token if needed
+ *   4. ensure client jar / libraries / assets are installed (idempotent)
  *   5. build JVM + game arguments
  *   6. hand the plan to the native layer (libmc4hos_core.so) which loads
  *      libjvm.so and invokes the game's main class
@@ -163,7 +163,11 @@ export class GameLauncher {
       return false;
     }
     // The HAP bundles the Java bridge; put it on disk before any JVM start.
-    DeployImport.ensureBundledBridge();
+    if (!DeployImport.ensureBundledBridge()) {
+      GameLauncher.setPhase('failed',
+        'mc4hos-bridge.jar could not be staged from the HAP');
+      return false;
+    }
     // Self-test mode: boot the embedded JVM with the bundled bridge jar and
     // run org.mc4hos.bridge.SelfTest — no Mojang services, no account, no
     // downloads. Then queue the EGL surface self-test for the game view.
@@ -179,7 +183,46 @@ export class GameLauncher {
         return false;
       }
 
-      // 2. account
+      // 2. compatibility and runtime, before authentication or game downloads.
+      const required: number = version.javaMajorVersion;
+      const bundled: number = JavaRuntimeManager.bundledMajor();
+      if (required > bundled) {
+        GameLauncher.setPhase('failed',
+          `This build runs games on Java ${bundled}; Java ${required} is not supported yet`);
+        return false;
+      }
+      if (version.libraries.some((lib) =>
+        lib.name.startsWith('org.lwjgl.lwjgl:lwjgl:') ||
+        lib.name.startsWith('org.lwjgl.lwjgl:lwjgl_util:'))) {
+        GameLauncher.setPhase('failed',
+          `${versionId} uses LWJGL 2, which is not supported by the HarmonyOS launch backend`);
+        return false;
+      }
+      await Paths.initHapNativeLibraryDir();
+      const nativeDir: string = Paths.hapNativeLibraryDir();
+      const missingNatives: Array<string> = REQUIRED_NATIVE_LIBRARIES
+        .filter((name: string) => nativeDir.length === 0 ||
+          !fs.accessSync(`${nativeDir}/${name}`));
+      if (missingNatives.length > 0) {
+        GameLauncher.setPhase('failed',
+          `Missing HarmonyOS natives: ${missingNatives.join(', ')} — rebuild the HAP native stack`);
+        return false;
+      }
+      if (!DeployImport.ensureBundledLwjgl()) {
+        GameLauncher.setPhase('failed', 'Adapted LWJGL jar could not be staged from the HAP');
+        return false;
+      }
+      GameLauncher.setPhase('preparing_runtime',
+        `Ensuring Java ${required} runtime`);
+      const runtime = await JavaRuntimeManager.ensureRuntime(required);
+      if (runtime === null) {
+        GameLauncher.setPhase('failed', required > bundled
+          ? `This build runs games on Java ${bundled}; Java ${required} is not supported yet`
+          : `No Java ${required} runtime installed — see docs/NATIVES.md`);
+        return false;
+      }
+
+      // 3. account
       GameLauncher.setPhase('verifying_account', 'Checking account token');
       const token: string | null = await AccountStore.ensureValidMcToken();
       const profile = await AccountStore.loadActiveProfile();
@@ -211,20 +254,7 @@ export class GameLauncher {
       }
       GameInstaller.markInstalled(version);
 
-      // 4. runtime
-      GameLauncher.setPhase('preparing_runtime',
-        `Ensuring Java ${version.javaMajorVersion} runtime`);
-      const runtime = await JavaRuntimeManager.ensureRuntime(version.javaMajorVersion);
-      if (runtime === null) {
-        const required: number = version.javaMajorVersion;
-        const bundled: number = JavaRuntimeManager.bundledMajor();
-        GameLauncher.setPhase('failed', required > bundled
-          ? `This build runs games on Java ${bundled}; Java ${required} is not supported yet`
-          : `No Java ${required} runtime installed — see docs/NATIVES.md`);
-        return false;
-      }
-
-      // 5. arguments
+      // 4. arguments
       GameLauncher.setPhase('building_args', 'Building JVM arguments');
       const ramMb: number = AppStorage.get<number>('ramMb') ?? 2048;
       const scale: number = AppStorage.get<number>('resolutionScale') ?? 100;
@@ -250,7 +280,7 @@ export class GameLauncher {
         ramMb: ramMb,
         resolutionWidth: Math.floor(baseWidth * scale / 100),
         resolutionHeight: Math.floor(baseHeight * scale / 100),
-        nativesDir: Paths.nativesVersionDir(version.id),
+        nativesDir: nativeDir,
         javaHome: runtime.homePath,
         extraJvmArgs: [],
         selfTest: false
@@ -262,7 +292,7 @@ export class GameLauncher {
         return false;
       }
 
-      // 6. native launch
+      // 5. native launch
       GameLauncher.setPhase('starting', 'Starting JVM');
       const config: NativeLaunchConfig = {
         javaHome: built.javaHome,

@@ -33,7 +33,6 @@ export struct SettingsPage {
   @StorageLink(KEY_RESOLUTION_SCALE) resolutionScale: number = 100;
   @StorageLink(KEY_DEMO_MODE) selfTestMode: boolean = false;
   @State packZipName: string = '';
-  @State nativesMcVersion: string = '';
   @State deployStatus: string = '';
   @State jdkStatus: string = '';
   @State importingJdk: boolean = false;
@@ -334,34 +333,11 @@ export struct SettingsPage {
             .onClick(() => {
               this.runImport(DeployImport.importRuntimePack(this.packZipName.trim()));
             })
-          Button('Import bridge jar (mc4hos-bridge.jar)')
+          Text('Bridge JARs and game natives are packaged in the HAP; HarmonyOS does not load sandbox-imported .so files.')
+            .fontSize(11)
+            .fontColor('#8FA0B3')
             .width('100%')
-            .height(40)
-            .fontSize(13)
-            .backgroundColor('#2A3340')
-            .margin({ top: 6 })
-            .onClick(() => {
-              this.runImport(DeployImport.importBridgeJar());
-            })
-          TextInput({ text: this.nativesMcVersion, placeholder: 'MC version for natives, e.g. 1.21.4' })
-            .width('100%')
-            .height(40)
-            .fontSize(13)
-            .backgroundColor('#1F2430')
-            .fontColor('#FFFFFF')
-            .margin({ top: 6 })
-            .onChange((value: string) => {
-              this.nativesMcVersion = value;
-            })
-          Button('Import natives zip (natives-<version>.zip, .so files at zip root)')
-            .width('100%')
-            .height(40)
-            .fontSize(13)
-            .backgroundColor('#2A3340')
-            .margin({ top: 6 })
-            .onClick(() => {
-              this.runImport(DeployImport.importNativesZip(this.nativesMcVersion.trim()));
-            })
+            .margin({ top: 8 })
           Button('List /data/local/tmp')
             .width('100%')
             .height(36)

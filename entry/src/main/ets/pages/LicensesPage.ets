@@ -56,19 +56,19 @@ const SECTIONS: Array<LicenseSection> = [
         name: 'LWJGL',
         license: 'BSD-3-Clause',
         detail: 'Window, input, OpenGL, GLFW and OpenAL bindings for Minecraft ' +
-          '(liblwjgl*.so, liblwjgl_glfw.so), built from upstream sources per ABI.'
+          '(liblwjgl_343*.so, liblwjgl_tinyfd.so), built from upstream sources per ABI.'
       },
       {
         name: 'OpenAL Soft',
-        license: 'LGPL-2.1-or-later',
+        license: 'LGPL-2.0-or-later',
         detail: 'Audio backend (libopenal.so), built from upstream sources and ' +
           'dynamically loaded by the game.'
       },
       {
         name: 'gl4es',
         license: 'MIT',
-        detail: 'Optional desktop-GL to GLES translation layer (libGL.so) for ' +
-          'older Minecraft pipelines.'
+        detail: 'Optional desktop-GL to GLES translation layer. It is not ' +
+          'included in this HAP; the game path requires system desktop OpenGL.'
       },
       {
         name: 'HarmonyOS / OpenHarmony SDK',

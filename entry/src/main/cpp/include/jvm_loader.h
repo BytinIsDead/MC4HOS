@@ -34,6 +34,8 @@ constexpr int kErrAlreadyRunning = 1;
 constexpr int kErrNoJavaHome = 2;
 constexpr int kErrLibJvmMissing = 3;
 constexpr int kErrCreateFailed = 4;
+constexpr int kErrRendererMissing = 5;
+constexpr int kErrNativeBridgeMissing = 6;
 
 /**
  * dlopen()s `<javaHome>/lib/server/libjvm.so`, creates the VM on a dedicated

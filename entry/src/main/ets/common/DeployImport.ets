@@ -11,6 +11,7 @@ import fs from '@ohos.file.fs';
 import zlib from '@ohos.zlib';
 import { Paths } from './Paths';
 import { RuntimeDescriptor, JavaRuntimeManager } from '../download/JavaRuntimeManager';
+import { LWJGL_JAR_NAME, LWJGL_GENERATION } from '../launch/LaunchConfig';
 
 /**
  * In-app deployment importer.
@@ -19,12 +20,10 @@ import { RuntimeDescriptor, JavaRuntimeManager } from '../download/JavaRuntimeMa
  * directory" / permission errors — but /data/local/tmp is world-writable,
  * so the reliable flow is:
  *
- *   hdc file send jre17-ohos-x86_64.zip /data/local/tmp/
- *   hdc file send mc4hos-bridge.jar    /data/local/tmp/
- *   hdc file send natives-1.21.4.zip   /data/local/tmp/
+ *   hdc file send jre21-ohos-x86_64.zip /data/local/tmp/
  *
- * …then import from the Settings page. The app copies the files into its
- * own sandbox and extracts them.
+ * …then import the runtime from the Settings page. Bridge JARs and game
+ * natives are HAP components and are not sandbox imports.
  */
 
 const TMP_DIR: string = '/data/local/tmp';
@@ -107,35 +106,20 @@ export class DeployImport {
     }
   }
 
-  /** Imports mc4hos-bridge.jar from /data/local/tmp into bridge/. */
-  public static async importBridgeJar(): Promise<string> {
-    try {
-      const bridgeDir: string = `${Paths.base()}/bridge`;
-      Paths.ensureDir(bridgeDir);
-      await DeployImport.copyIn('mc4hos-bridge.jar', `${bridgeDir}/mc4hos-bridge.jar`);
-      return 'Bridge jar imported (classpath-ready)';
-    } catch (err) {
-      const e = err as Error;
-      return `Bridge import failed: ${e.message} — send mc4hos-bridge.jar to ${TMP_DIR} first`;
-    }
-  }
-
-  /**
-   * Deploys resources/rawfile/bridge/mc4hos-bridge.jar into the sandbox on
-   * first launch. Returns true when a jar is present afterwards; an already
-   * imported jar is never overwritten.
-   */
-  public static ensureBundledBridge(): boolean {
+  private static stageBundledJar(resourceName: string, version: string): boolean {
     const bridgeDir: string = `${Paths.base()}/bridge`;
-    const dest: string = `${bridgeDir}/mc4hos-bridge.jar`;
+    const dest: string = `${bridgeDir}/${resourceName}`;
+    const marker: string = `${dest}.version`;
     try {
-      if (fs.accessSync(dest)) {
+      if (fs.accessSync(dest) && fs.accessSync(marker) &&
+        fs.readTextSync(marker) === version) {
         return true;
       }
       const data: Uint8Array = getContext().resourceManager
-        .getRawFileContentSync('bridge/mc4hos-bridge.jar');
+        .getRawFileContentSync(`bridge/${resourceName}`);
       Paths.ensureDir(bridgeDir);
-      const out = fs.openSync(dest,
+      const part: string = `${dest}.part`;
+      const out = fs.openSync(part,
         fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
       try {
         const bytes: ArrayBuffer =
@@ -144,31 +128,22 @@ export class DeployImport {
       } finally {
         fs.closeSync(out);
       }
+      if (fs.accessSync(dest)) {
+        fs.unlinkSync(dest);
+      }
+      fs.renameSync(part, dest);
+      Paths.writeTextFileSync(marker, version);
       return true;
     } catch (err) {
       return false;
     }
   }
 
-  /**
-   * Imports a natives zip named `natives-<mcVersion>.zip` whose root
-   * contains the lib*.so files for the device ABI. Extracts to
-   * natives/<mcVersion>/<abi>/.
-   */
-  public static async importNativesZip(mcVersion: string): Promise<string> {
-    if (mcVersion.length === 0) {
-      return 'Enter the Minecraft version the natives were built for';
-    }
-    try {
-      const destDir: string = Paths.nativesVersionDir(mcVersion);
-      Paths.ensureDir(destDir);
-      await DeployImport.copyIn(`natives-${mcVersion}.zip`, `${Paths.nativesDir()}/natives-${mcVersion}.zip`);
-      await zlib.decompressFile(`${Paths.nativesDir()}/natives-${mcVersion}.zip`, destDir);
-      fs.unlinkSync(`${Paths.nativesDir()}/natives-${mcVersion}.zip`);
-      return `Natives imported for ${mcVersion} (${Paths.deviceAbi()})`;
-    } catch (err) {
-      const e = err as Error;
-      return `Natives import failed: ${e.message}`;
-    }
+  public static ensureBundledBridge(): boolean {
+    return DeployImport.stageBundledJar('mc4hos-bridge.jar', '1.0.0');
+  }
+
+  public static ensureBundledLwjgl(): boolean {
+    return DeployImport.stageBundledJar(LWJGL_JAR_NAME, LWJGL_GENERATION);
   }
 }

@@ -40,15 +40,14 @@ find_library(ace-ndk-lib      ace_ndk.z)
 find_library(egl-lib          EGL)
 find_library(gles-lib         GLESv3)
 find_library(dl-lib           dl)
+find_library(nativewindow-manager-lib native_window_manager)
+find_library(ohinput-lib ohinput)
 
-# Native window APIs are optional for the core bridge: we only hand the
-# XComponent window pointer through to EGL, and the OH_NativeXComponent_*
-# symbols live in libace_ndk.z.so. Some HMOS SDK sysroots do not export
-# libnativewindow.so, so probe both OHOS naming conventions and link it
-# only when present — an unconditional link fails the generate step with
-# "variable ... set to NOTFOUND" on those SDKs.
+# The GLFW bridge uses OH_NativeWindow* directly. Probe both OHOS naming
+# conventions because SDK sysroots differ in whether the archive carries the
+# .z suffix.
 find_library(nativewindow-lib
-        NAMES nativewindow nativewindow.z)
+        NAMES native_window nativewindow native_window.z nativewindow.z)
 
 target_link_libraries(mc4hos_core PUBLIC
         ${napi-lib}
@@ -61,5 +60,26 @@ target_link_libraries(mc4hos_core PUBLIC
 if(nativewindow-lib)
         target_link_libraries(mc4hos_core PUBLIC ${nativewindow-lib})
 else()
-        message(STATUS "MC4HOS: libnativewindow not in this SDK sysroot - skipped (no OH_NativeWindow symbols used)")
+        message(STATUS "MC4HOS: libnativewindow not in this SDK sysroot")
 endif()
+
+if(NOT nativewindow-lib OR NOT nativewindow-manager-lib OR NOT ohinput-lib)
+        message(FATAL_ERROR "MC4HOS GLFW bridge requires nativewindow, native_window_manager and ohinput")
+endif()
+
+add_library(meowcraftbridge SHARED
+        meowcraftbridge/egl_gl.c
+        meowcraftbridge/input_bridge.c
+        meowcraftbridge/meowcraftbridge_environ.c
+        meowcraftbridge/meowpasteboard.c
+        meowcraftbridge/meowqos.c
+        meowcraftbridge/meowbt.c)
+set_target_properties(meowcraftbridge PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+target_include_directories(meowcraftbridge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/meowcraftbridge)
+target_link_libraries(meowcraftbridge PUBLIC
+        ${hilog-lib}
+        ${nativewindow-manager-lib}
+        ${nativewindow-lib}
+        ${ohinput-lib}
+        ${egl-lib}
+        ${dl-lib})

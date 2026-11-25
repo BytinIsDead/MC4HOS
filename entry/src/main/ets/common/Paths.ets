@@ -21,9 +21,7 @@ import { Logger } from './Logger';
  *   libraries/   maven-layout dependency jars
  *   assets/      asset index JSONs + hashed object pool
  *   jvm/         embedded Java runtimes (one sub-directory per runtime,
- *                runtime names carry their ABI: jre17-ohos-x86_64 …)
- *   natives/     platform native libraries per game version AND ABI
- *                (liblwjgl.so, libopenal.so, …)
+ *                runtime names carry their ABI: jre21-ohos-x86_64 …)
  *   logs/        captured JVM output
  *   saves/       game_directory (worlds, options.txt, screenshots)
  */
@@ -40,9 +38,9 @@ export class Paths {
     Paths.ensureDir(Paths.indexesDir());
     Paths.ensureDir(Paths.objectsDir());
     Paths.ensureDir(Paths.jvmDir());
-    Paths.ensureDir(Paths.nativesDir());
     Paths.ensureDir(Paths.logsDir());
     Paths.ensureDir(Paths.gameDir());
+    Paths.ensureDir(`${Paths.gameDir()}/.cache/mesa`);
   }
 
   public static base(): string {
@@ -108,19 +106,6 @@ export class Paths {
 
   public static jvmRuntimeDir(runtimeName: string): string {
     return `${Paths.jvmDir()}/${runtimeName}`;
-  }
-
-  public static nativesDir(): string {
-    return `${Paths.baseDir}/natives`;
-  }
-
-  /**
-   * Natives live per game version AND per ABI, e.g.
-   * `natives/1.20.4/x86_64/liblwjgl.so` — a device only ever loads its own
-   * architecture, and the same sandbox can hold both.
-   */
-  public static nativesVersionDir(versionId: string): string {
-    return `${Paths.nativesDir()}/${versionId}/${Paths.deviceAbi()}`;
   }
 
   public static logsDir(): string {

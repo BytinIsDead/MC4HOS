@@ -11,6 +11,8 @@
 #define MC4HOS_GAME_SURFACE_H
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 struct OH_NativeXComponent;
 
@@ -25,6 +27,13 @@ void DispatchTouchEvent(OH_NativeXComponent *component, void *window);
 void *NativeWindow();
 uint32_t SurfaceWidth();
 uint32_t SurfaceHeight();
+
+bool LoadNativeBridge(const std::vector<std::string> &nativeDirs);
+void PublishNativeWindow();
+void ForwardKey(int code, int action);
+void ForwardMouseButton(int button, int action);
+void ForwardMouseMove(float dx, float dy);
+void ForwardTouch(int id, float x, float y, int action);
 
 /**
  * Self-test renderer: a spinning triangle on a private EGL/GLES3 context,

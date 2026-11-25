@@ -64,6 +64,16 @@ void GameThreadMain(LaunchConfig config, JNIEnv *env) {
         jni::CallStaticVoid(env, "org/mc4hos/bridge/PlatformBridge",
                             "onGameSurfaceCreated", "(II)V", sizeArgs);
     }
+    surface::PublishNativeWindow();
+    if (config.mainClass != "org.mc4hos.bridge.SelfTest") {
+        jvalue monitorArgs[2];
+        monitorArgs[0].i = static_cast<jint>(surface::SurfaceWidth());
+        monitorArgs[1].i = static_cast<jint>(surface::SurfaceHeight());
+        if (!jni::CallStaticVoid(env, "org/lwjgl/glfw/GLFW",
+                                 "internalChangeMonitorSize", "(II)V", monitorArgs)) {
+            log::Emit("[MC4HOS] LWJGL monitor initialization failed");
+        }
+    }
     log::Emit("[MC4HOS] bridge handshake done");
     input::DispatchPending(env);
     log::Emit("[MC4HOS] pending input flushed");
@@ -314,6 +324,34 @@ int StartJvm(const LaunchConfig &config) {
     // before libjvm itself is loaded.
     const std::vector<std::string> nativeDirs = SplitNativeDirs(config.nativesDirs);
     PrependLdLibraryPath(config.nativesDirs);
+    if (config.mainClass != "org.mc4hos.bridge.SelfTest") {
+        ::setenv("MEOWCRAFT_RENDERER", "openglv4", 1);
+        ::setenv("MEOWCRAFT_GL_PROFILE", "core", 1);
+        ::setenv("ALSOFT_LOGLEVEL", "0", 1);
+        ::setenv("vblank_mode", "0", 1);
+        ::setenv("GALLIUM_THREAD", "0", 1);
+        ::setenv("HOME", config.workingDir.c_str(), 1);
+        const std::string cacheDir = config.workingDir + "/.cache";
+        ::setenv("XDG_CACHE_HOME", cacheDir.c_str(), 1);
+        ::setenv("MESA_SHADER_CACHE_DIR", (cacheDir + "/mesa").c_str(), 1);
+        if (!nativeDirs.empty()) {
+            ::setenv("MEOWCRAFT_NATIVEDIR", nativeDirs.front().c_str(), 1);
+        }
+        if (::chdir(config.workingDir.c_str()) != 0) {
+            log::Emit("[MC4HOS] chdir(game directory) failed: " + config.workingDir);
+        }
+        void *renderer = ::dlopen("libGLv4.so", RTLD_NOW | RTLD_GLOBAL);
+        if (renderer == nullptr) {
+            const char *error = ::dlerror();
+            log::Emit(std::string("[MC4HOS] desktop GL renderer unavailable: ") +
+                      (error == nullptr ? "unknown error" : error));
+            return kErrRendererMissing;
+        }
+        log::Emit("[MC4HOS] desktop GL renderer loaded");
+        if (!surface::LoadNativeBridge(nativeDirs)) {
+            return kErrNativeBridgeMissing;
+        }
+    }
     PreloadAbiShim(home, nativeDirs);
     // libjvm discovers the embedding contract through dlsym(RTLD_DEFAULT);
     // make sure this library sits in the global scope.

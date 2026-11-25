@@ -62,8 +62,8 @@ export interface LibDownload {
 
 export interface LibNatives {
   coord: string;
-  /** e.g. "natives-linux" — MC4HOS ignores these classifiers and instead
-   *  loads OpenHarmony-built natives from Paths.nativesDir(). */
+  /** e.g. "natives-linux" — stock Linux natives are not loadable on
+   *  HarmonyOS; the HAP supplies the adapted native stack. */
   classifier: string;
 }
 

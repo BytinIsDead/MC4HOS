@@ -13,7 +13,10 @@ import { Paths } from '../common/Paths';
 import { RuleSet, ArgEntry } from '../download/VersionManifest';
 import { GameInstaller } from '../download/GameInstaller';
 import { JavaRuntimeManager } from '../download/JavaRuntimeManager';
-import { BuiltLaunch, LaunchContext, LAUNCHER_NAME, LAUNCHER_VERSION } from './LaunchConfig';
+import {
+  BuiltLaunch, LaunchContext, LAUNCHER_NAME, LAUNCHER_VERSION,
+  LWJGL_JAR_NAME, LWJGL_GENERATION
+} from './LaunchConfig';
 
 /**
  * Constructs the complete JVM and game argument vectors from the version
@@ -144,9 +147,14 @@ export class JvmArgumentBuilder {
       return false;
     }
     if (rule.osArch !== undefined && rule.osArch.length > 0) {
-      if (rule.osArch !== 'arm64' && rule.osArch !== 'x86_64') {
+      const abi: string = Paths.deviceAbi();
+      const arch: string = abi === 'arm64-v8a' ? 'arm64' : abi;
+      if (rule.osArch !== arch) {
         return false;
       }
+    }
+    if (rule.osVersion !== undefined && rule.osVersion.length > 0) {
+      return false;
     }
     return true;
   }
@@ -190,30 +198,50 @@ export class JvmArgumentBuilder {
     // Our clean-room Java-side bridge classes (input dispatch etc.), when
     // installed by the natives pipeline.
     const bridgeJar: string = `${Paths.base()}/bridge/mc4hos-bridge.jar`;
-    if (fs.accessSync(bridgeJar)) {
-      jars.push(bridgeJar);
+    if (!fs.accessSync(bridgeJar)) {
+      Logger.error(TAG, `bridge jar missing: ${bridgeJar}`);
+      return '';
     }
+    jars.push(bridgeJar);
+
+    const lwjglJar: string = `${Paths.base()}/bridge/${LWJGL_JAR_NAME}`;
+    if (!fs.accessSync(lwjglJar)) {
+      Logger.error(TAG, `adapted LWJGL jar missing: ${lwjglJar}`);
+      return '';
+    }
+    jars.push(lwjglJar);
 
     for (const lib of this.ctx.version.libraries) {
-      if (!GameInstaller.rulesAllow(lib.rules)) {
+      const coord: string = lib.download === null ? lib.name : lib.download.coord;
+      if (coord.startsWith('org.lwjgl:') || coord.startsWith('org.lwjgl.lwjgl:')) {
+        continue;
+      }
+      if (!GameInstaller.rulesAllow(lib.rules) || lib.natives !== null) {
         continue;
       }
       if (lib.download === null || lib.download.url.length === 0) {
-        continue;
+        Logger.error(TAG, `required library has no artifact: ${lib.name}`);
+        return '';
       }
       const parts: Array<string> = lib.download.coord.split(':');
       if (parts.length !== 3) {
-        continue;
+        Logger.error(TAG, `invalid library coordinate: ${lib.name}`);
+        return '';
       }
-      jars.push(Paths.libraryPath(parts[0], parts[1], parts[2]));
+      const path: string = Paths.libraryPath(parts[0], parts[1], parts[2]);
+      if (!fs.accessSync(path)) {
+        Logger.error(TAG, `required library missing: ${path}`);
+        return '';
+      }
+      jars.push(path);
     }
 
     const clientJar: string = Paths.clientJarPath(this.ctx.version.id);
-    if (fs.accessSync(clientJar)) {
-      jars.push(clientJar);
-    } else {
-      Logger.warn(TAG, `client jar missing: ${clientJar}`);
+    if (!fs.accessSync(clientJar)) {
+      Logger.error(TAG, `client jar missing: ${clientJar}`);
+      return '';
     }
+    jars.push(clientJar);
     return jars.join(':');
   }
 
@@ -273,6 +301,10 @@ export class JvmArgumentBuilder {
       opts.push('-Dorg.lwjgl.opengl.Display.allowSoftwareOpenGL=false');
       opts.push('-Djava.io.tmpdir=' + Paths.gameDir());
     }
+
+    opts.push('-Dorg.lwjgl.opengl.libname=libGLv4.so');
+    opts.push(`-Dorg.lwjgl.system.bundledLibrary.nameMapper=org.lwjgl.system.MeowBundledNameMapper`);
+    opts.push(`-Dmeow.lwjgl.gen=${LWJGL_GENERATION}`);
 
     // MC4HOS environment descriptors consumed by the Java-side bridge layer.
     opts.push(`-Dmc4hos.natives.dir=${this.ctx.nativesDir}`);

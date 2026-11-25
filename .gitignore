@@ -2,8 +2,11 @@
 # NOTE: hvigor model configs (.hvigor/hvigor-config.json5 and
 # hvigor/hvigor-config.json5) are COMMITTED — only caches are ignored.
 /.tmp
+/.build
 /node_modules
 /oh_modules
+__pycache__/
+*.py[cod]
 /local.properties
 /.idea
 **/build

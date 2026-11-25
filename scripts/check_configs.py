@@ -24,7 +24,7 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
 SKIP_DIRS = {".git", "node_modules", "oh_modules", ".cxx", ".idea", "build",
-             ".hvigor"}
+             ".hvigor", ".build", ".tmp", "out", "dist"}
 errors = []
 
 

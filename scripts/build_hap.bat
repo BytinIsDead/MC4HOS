@@ -8,7 +8,8 @@ rem file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 rem Builds the HAP locally, using the DevEco Studio installation on this
 rem machine. Runtime packs are fetched at build time and bundled inside the
-rem HAP; set BUNDLE_JRES=0 to build without them.
+rem HAP; set BUNDLE_JRES=0 to build without them. The pinned LWJGL/OpenAL stack
+rem must already be staged by scripts\native\build_stack.sh.
 rem
 rem Override the install location with:  set DEVECO_STUDIO_HOME=<dir>
 setlocal enabledelayedexpansion
@@ -57,11 +58,39 @@ if not "%BUNDLE_JRES%"=="0" (
   )
 )
 
+echo Building MC4HOS bridge jar...
+python "%ROOT%\scripts\build_bridge_jar.py"
+if errorlevel 1 (
+  echo ERROR: bridge jar build failed
+  exit /b 1
+)
+
+echo Verifying staged native stack...
+python "%ROOT%\scripts\check_native_stack.py" --entry "%ROOT%\entry"
+if errorlevel 1 (
+  echo ERROR: native stack validation failed
+  exit /b 1
+)
+
 rem --- build ---------------------------------------------------------------
 echo Building HAP ^(debug, unsigned^)...
-call "%NODE%" "%HVIGORW_JS%" --mode module -p module=entry@default -p product=default assembleHap
+if not exist "%ROOT%\.build" mkdir "%ROOT%\.build"
+set "BUILD_LOG=%ROOT%\.build\hvigor-build.log"
+call "%NODE%" "%HVIGORW_JS%" --mode module -p module=entry@default -p product=default assembleHap > "%BUILD_LOG%" 2>&1
+set "BUILD_EXIT=%ERRORLEVEL%"
+type "%BUILD_LOG%"
+if not "%BUILD_EXIT%"=="0" (
+  echo ERROR: hvigor exited with %BUILD_EXIT%
+  exit /b 1
+)
+findstr /C:"BUILD FAILED" "%BUILD_LOG%" >nul
+if not errorlevel 1 (
+  echo ERROR: hvigor reported BUILD FAILED
+  exit /b 1
+)
+findstr /C:"BUILD SUCCESSFUL" "%BUILD_LOG%" >nul
 if errorlevel 1 (
-  echo ERROR: hvigor build failed - see output above
+  echo ERROR: hvigor produced no BUILD SUCCESSFUL marker
   exit /b 1
 )
 

@@ -10,8 +10,7 @@
 
 The jar is packaged at resources/rawfile/bridge/mc4hos-bridge.jar so the
 HAP ships the Java side of the bridge (docs/NATIVES.md §3). DeployImport
-copies it into <sandbox>/bridge/ on first launch; a jar imported manually
-via Settings still wins because the deploy only runs when it is absent.
+stages it into <sandbox>/bridge/ atomically and refreshes stale versions.
 """
 
 import os

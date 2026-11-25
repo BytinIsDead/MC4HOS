@@ -26,7 +26,7 @@ export interface LaunchContext {
   ramMb: number;
   resolutionWidth: number;
   resolutionHeight: number;
-  /** Directory holding OpenHarmony-built natives (liblwjgl.so etc.). */
+  /** Directory holding the HAP's loadable OpenHarmony native libraries. */
   nativesDir: string;
   /** Runtime home directory of the selected embedded JRE. */
   javaHome: string;
@@ -53,3 +53,14 @@ export interface BuiltLaunch {
 
 export const LAUNCHER_NAME: string = 'MC4HOS';
 export const LAUNCHER_VERSION: string = '1.0.0';
+export const LWJGL_JAR_NAME: string = 'lwjgl-3.4.3.jar';
+export const LWJGL_GENERATION: string = '3.4.3';
+export const REQUIRED_NATIVE_LIBRARIES: Array<string> = [
+  'libmeowcraftbridge.so',
+  'liblwjgl_343.so',
+  'liblwjgl_343_opengl.so',
+  'liblwjgl_343_stb.so',
+  'liblwjgl_tinyfd.so',
+  'libopenal.so',
+  'libfreetype.so'
+];

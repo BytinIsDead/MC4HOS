@@ -9,20 +9,17 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 # MC4HOS — Minecraft: Java Edition launcher for HarmonyOS
 
-A native, clean-room launcher that runs **Minecraft: Java Edition**
-(vanilla protocol, 1.12.2 → modern releases) on **HarmonyOS 6.1.1
-(API 24)** devices — phones, foldables and tablets — by embedding an
-OpenJDK runtime through the HarmonyOS NDK and rendering through
-XComponent surfaces. Both 64-bit ABIs are supported: **arm64-v8a**
-(phones/tablets) and **x86_64** (Intel 2-in-1s and the OpenHarmony
-emulator); the OHOS NDK has no 32-bit x86 ABI and the JVM needs 64-bit
-anyway. aarch64 runtimes use pinned public OHOS OpenJDK builds; the
-x86_64 runtime is cross-compiled by the separate
-[`openharmony-openjdk`](https://github.com/BytinIsDead/openharmony-openjdk)
-repository and its GitHub Actions workflow, which builds both ABIs. The build
-scripts fetch the runtime packs and bundle them inside the HAP, so
-phones/tablets can launch offline after install; the app falls back to
-downloading a pack when the required major/ABI is not bundled.
+A native launcher for **Minecraft: Java Edition** on **HarmonyOS 6.1.1
+(API 24)** devices — phones, foldables and tablets — embedding OpenJDK
+through the HarmonyOS NDK and rendering through XComponent surfaces. Both
+64-bit ABIs are supported: **arm64-v8a** (phones/tablets) and **x86_64**
+(Intel 2-in-1s and the OpenHarmony emulator); the OHOS NDK has no 32-bit
+x86 ABI and the JVM needs 64-bit anyway. This build packages OpenJDK 21
+natives and targets LWJGL3 releases requiring Java 21 or older. Releases
+requiring newer Java, including current Minecraft 26.x releases, are
+rejected before downloads; LWJGL2 releases are also unsupported. The build
+scripts fetch the pinned Java 21 runtime packs and bundle them inside the
+HAP for offline first use.
 
 **License: MPL-2.0** (see [LICENSE](LICENSE)). Every source file carries the
 standard Exhibit-A notice. This project contains no third-party proprietary
@@ -47,14 +44,13 @@ trademark and third-party component obligations.
 │  jvm_loader.cpp       dlopen(libjvm.so) → JNI_CreateJavaVM → main(String[])   │
 │  jni_bridge.cpp       JNI helpers, exception reporting, System.exit           │
 │  input_bridge.cpp     overlay events → org.mc4hos.bridge.InputBridge          │
-│  game_surface.cpp     OH_NativeXComponent lifecycle + EGL/GLES3 self-test     │
+│  game_surface.cpp     OH_NativeXComponent lifecycle + direct GLFW window      │
 │  log_capture.cpp      stdout/stderr pipe → latest.log + ArkTS console         │
 └───────────────────────────────────┬───────────────────────────────────────────┘
-                                    │ JNI (in-process)
+                                    │ dlopen + JNI (in-process)
 ┌───────────────────────────────────▼───────────────────────────────────────────┐
-│  Embedded OpenHarmony OpenJDK (aarch64 / x86_64) — aarch64 packs ship         │
-│  inside the HAP, x86_64 packs come from openharmony-openjdk (NATIVES.md)      │
-│  + mc4hos-bridge.jar (org.mc4hos.bridge.*) + OpenHarmony-built LWJGL/OpenAL   │
+│  Embedded OpenHarmony OpenJDK 21 (aarch64 / x86_64) + mc4hos-bridge.jar        │
+│  + adapted LWJGL 3.4.3 + libmeowcraftbridge.so + OpenAL Soft + FreeType        │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,14 +69,15 @@ trademark and third-party component obligations.
 | XComponent surface lifecycle + EGL/GLES3 self-test renderer | ✅ implemented |
 | Dual-ABI build (arm64-v8a + x86_64), per-ABI runtime packs & natives | ✅ implemented |
 | Android-style JDK/JRE import from a `.zip` (system file picker, ABI + version validation) | ✅ implemented |
-| aarch64 OpenHarmony OpenJDK 8/17/21/25 runtimes | ✅ bundled into the HAP (fetched at build time, SHA-256 pinned) |
-| x86_64 OpenHarmony OpenJDK 21/25 runtimes | ✅ built by the separate `openharmony-openjdk` repo (combined x86_64/aarch64 workflow); published as `jdk-ohos-v1`, bundled into the HAP |
-| LWJGL / OpenAL / GLFW-shim binaries | 🔶 pipeline documented in [docs/NATIVES.md](docs/NATIVES.md); build them from upstream sources |
-| Desktop-GL translation (gl4es-class) | 🔶 optional component, MIT-licensed upstream |
+| OpenHarmony OpenJDK 21 runtimes | ✅ selected for both ABIs; fetched and packaged by the build, SHA-256 pinned |
+| Other OpenJDK majors | ❌ not loadable in this HAP; catalog entries alone do not provide native libraries |
+| Adapted LWJGL 3.4.3 / OpenAL Soft / FreeType | ✅ reproducible builders and dual-ABI packaging; generated binaries are gitignored |
+| libmeowcraftbridge.so | ✅ MC4HOS XComponent window publication, GLFW/EGL semantics and input forwarding |
+| Desktop-GL translation (gl4es-class) | ❌ not included; the current game path uses system `libGLv4.so` with a core profile |
 
-The seams are deliberate compliance boundaries: binaries of
-GPLv2+CE / BSD / LGPL projects are never committed here, only built from
-pristine sources.
+Third-party runtime and game-native binaries are built from pinned sources
+and packaged at build time rather than committed. Their licenses and
+corresponding-source obligations are recorded in [NOTICE.md](NOTICE.md).
 
 ## Repository layout
 
@@ -107,7 +104,8 @@ entry/src/main/
     ui/                      ControlLayout · VirtualControls
     common/                  Http · JsonReader · Logger · Paths · AppState
   cpp/
-    CMakeLists.txt           builds libmc4hos_core.so (arm64-v8a + x86_64)
+    CMakeLists.txt           builds libmc4hos_core.so + libmeowcraftbridge.so
+                             (arm64-v8a + x86_64)
     napi_init.cpp            NAPI module + XComponent attach
     include/ src/            jvm_loader · jni_bridge · input_bridge ·
                              game_surface · log_capture
@@ -118,7 +116,7 @@ entry/src/main/
 ## Quick start
 
 ```bash
-# local build: fetches the bundled runtimes (~390 MB aarch64) then builds
+# local build: fetches pinned runtime packs, packages Java 21 natives, then builds
 scripts\build_hap.bat            # Windows (set BUNDLE_JRES=0 to skip)
 scripts/build_hap.sh             # macOS/Linux
 hdc install entry/build/default/outputs/default/entry-default-signed.hap
@@ -127,8 +125,8 @@ hdc shell aa start -a EntryAbility -b org.mc4hos.launcher
 
 Building from the DevEco Studio GUI skips the fetch step; run
 `python3 scripts/fetch_bundled_jres.py` once beforehand to bundle runtimes.
-The app extracts the pack matching the device ABI and required Java major on
-first use, and falls back to downloading when nothing suitable is bundled.
+The app extracts the Java 21 pack matching the device ABI on first use, and
+falls back to downloading that pack when it is not bundled.
 Full walkthrough incl. self-test mode, account setup, runtime deployment:
 [docs/BUILD.md](docs/BUILD.md).
 
@@ -182,13 +180,13 @@ Modern Mojang metadata is handled as shipped: `${classpath}` and
 `${natives_directory}` are substituted from the install tree, the native
 loader owns `-cp`/`-Djava.library.path`, and the version's full
 `assetIndex.url` is fetched (and SHA-1 verified) instead of being
-reconstructed. The runtime catalog covers aarch64 Java 8/17/21/25 and
-x86_64 Java 21/25 — Minecraft 26.x requires Java 25, and the launcher never
-falls back to an older major version. All packs are bundled in the HAP
-(pinned by size and SHA-256 in `scripts/bundled-jres.lock.json`); the
-x86_64 packs come from the `jdk-ohos-v1` release of `openharmony-openjdk`.
-Missing packs are downloaded on demand, and JDK8-style
-`jre/lib/<arch>/server` layouts are normalized alongside modern `lib/server`.
+reconstructed. The runtime catalog retains historical pack references, but this HAP packages
+and loads only Java 21 native libraries. Minecraft releases requiring Java 25
+or newer are rejected before authentication and downloads; the launcher never
+falls back to an older major. Selected packs are pinned by size and SHA-256 in
+`scripts/bundled-jres.lock.json`; missing Java 21 packs are downloaded on
+demand. JDK8-style `jre/lib/<arch>/server` layouts are normalized alongside
+modern `lib/server`.
 
 Known architectural limitation: the embedded HotSpot JVM is linked
 in-process, so `System.exit` ends the app process; "Leave game" closes the

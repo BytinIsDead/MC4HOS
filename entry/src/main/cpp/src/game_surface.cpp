@@ -18,7 +18,9 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <unistd.h>
+#include <dlfcn.h>
 #include <cmath>
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -35,6 +37,24 @@ std::atomic<uint32_t> g_height{0};
 std::atomic<bool> g_selfTestRunning{false};
 std::atomic<bool> g_selfTestPending{false};
 std::atomic<bool> g_surfaceAlive{false};
+
+using SetNativeWindowFn = int (*)(void *, int, int);
+using ClearNativeWindowFn = void (*)(void *);
+using SendScreenSizeFn = void (*)(int, int);
+using SendKeyFn = void (*)(int, int, int, int);
+using SendMouseButtonFn = void (*)(int, int, int);
+using SendCursorPosFn = void (*)(float, float);
+
+void *g_bridgeHandle = nullptr;
+SetNativeWindowFn g_setNativeWindow = nullptr;
+ClearNativeWindowFn g_clearNativeWindow = nullptr;
+SendScreenSizeFn g_sendScreenSize = nullptr;
+SendKeyFn g_sendKey = nullptr;
+SendMouseButtonFn g_sendMouseButton = nullptr;
+SendCursorPosFn g_sendCursorPos = nullptr;
+std::mutex g_cursorMutex;
+float g_cursorX = 0.0f;
+float g_cursorY = 0.0f;
 
 // -------------------------------------------------------------------------
 // EGL self-test renderer (spinning triangle). The production game renders
@@ -122,6 +142,120 @@ void NotifyJavaSurface(uint32_t width, uint32_t height) {
 
 } // namespace
 
+bool LoadNativeBridge(const std::vector<std::string> &nativeDirs) {
+    if (g_bridgeHandle != nullptr) {
+        return true;
+    }
+    std::string lastError;
+    for (const std::string &dir : nativeDirs) {
+        const std::string path = dir + "/libmeowcraftbridge.so";
+        void *handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (handle == nullptr) {
+            const char *error = ::dlerror();
+            lastError = error == nullptr ? "unknown error" : error;
+            continue;
+        }
+        auto setWindow = reinterpret_cast<SetNativeWindowFn>(
+            ::dlsym(handle, "meowSetNativeWindow"));
+        auto clearWindow = reinterpret_cast<ClearNativeWindowFn>(
+            ::dlsym(handle, "meowClearNativeWindow"));
+        auto sendSize = reinterpret_cast<SendScreenSizeFn>(
+            ::dlsym(handle, "critical_send_screen_size"));
+        auto sendKey = reinterpret_cast<SendKeyFn>(
+            ::dlsym(handle, "critical_send_key"));
+        auto sendButton = reinterpret_cast<SendMouseButtonFn>(
+            ::dlsym(handle, "critical_send_mouse_button"));
+        auto sendCursor = reinterpret_cast<SendCursorPosFn>(
+            ::dlsym(handle, "critical_send_cursor_pos"));
+        if (setWindow == nullptr || clearWindow == nullptr || sendSize == nullptr ||
+            sendKey == nullptr || sendButton == nullptr || sendCursor == nullptr) {
+            ::dlclose(handle);
+            log::Emit("[MC4HOS] libmeowcraftbridge.so is missing required exports");
+            return false;
+        }
+        g_bridgeHandle = handle;
+        g_setNativeWindow = setWindow;
+        g_clearNativeWindow = clearWindow;
+        g_sendScreenSize = sendSize;
+        g_sendKey = sendKey;
+        g_sendMouseButton = sendButton;
+        g_sendCursorPos = sendCursor;
+        log::Emit("[MC4HOS] loaded " + path);
+        return true;
+    }
+    log::Emit("[MC4HOS] dlopen(libmeowcraftbridge.so) failed: " + lastError);
+    return false;
+}
+
+void PublishNativeWindow() {
+    if (g_setNativeWindow == nullptr || g_sendScreenSize == nullptr) {
+        return;
+    }
+    void *window;
+    uint32_t width;
+    uint32_t height;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        window = g_window;
+        width = g_width.load();
+        height = g_height.load();
+    }
+    if (window == nullptr) {
+        return;
+    }
+    if (g_setNativeWindow(window, static_cast<int>(width), static_cast<int>(height)) == 0 &&
+        width > 0 && height > 0) {
+        g_sendScreenSize(static_cast<int>(width), static_cast<int>(height));
+    }
+}
+
+void ForwardKey(int code, int action) {
+    if (g_sendKey != nullptr) {
+        g_sendKey(code, code, action, 0);
+    }
+}
+
+void ForwardMouseButton(int button, int action) {
+    if (g_sendMouseButton != nullptr) {
+        g_sendMouseButton(button, action, 0);
+    }
+}
+
+void ForwardMouseMove(float dx, float dy) {
+    if (g_sendCursorPos == nullptr) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_cursorMutex);
+    if (g_cursorX == 0.0f && g_cursorY == 0.0f) {
+        g_cursorX = static_cast<float>(g_width.load()) * 0.5f;
+        g_cursorY = static_cast<float>(g_height.load()) * 0.5f;
+    }
+    g_cursorX += dx;
+    g_cursorY += dy;
+    const float width = static_cast<float>(g_width.load());
+    const float height = static_cast<float>(g_height.load());
+    g_cursorX = std::max(0.0f, std::min(g_cursorX, width > 0.0f ? width - 1.0f : 0.0f));
+    g_cursorY = std::max(0.0f, std::min(g_cursorY, height > 0.0f ? height - 1.0f : 0.0f));
+    g_sendCursorPos(g_cursorX, g_cursorY);
+}
+
+void ForwardTouch(int id, float x, float y, int action) {
+    if (id != 0 || g_sendCursorPos == nullptr || g_sendMouseButton == nullptr) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_cursorMutex);
+        g_cursorX = x;
+        g_cursorY = y;
+    }
+    g_sendCursorPos(x, y);
+    if (action == input::ACTION_DOWN) {
+        g_sendMouseButton(0, 0, 0);
+    } else if (action == input::ACTION_UP || action == input::ACTION_CANCEL) {
+        g_sendMouseButton(0, 1, 0);
+    }
+}
+
 void OnSurfaceCreated(OH_NativeXComponent *component, void *window) {
     bool startSelfTest = false;
     uint32_t width = 0;
@@ -155,6 +289,7 @@ void OnSurfaceCreated(OH_NativeXComponent *component, void *window) {
         std::thread(RenderLoop).detach();
     }
     NotifyJavaSurface(width, height);
+    PublishNativeWindow();
 }
 
 void OnSurfaceChanged(OH_NativeXComponent *component, void *window) {
@@ -178,14 +313,22 @@ void OnSurfaceChanged(OH_NativeXComponent *component, void *window) {
                   std::to_string(height));
     }
     NotifyJavaSurface(width, height);
+    PublishNativeWindow();
 }
 
 void OnSurfaceDestroyed(OH_NativeXComponent *component, void *window) {
     (void)component;
     (void)window;
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_surfaceAlive.store(false);
-    g_window = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_surfaceAlive.store(false);
+        window = g_window;
+        g_window = nullptr;
+    }
+    if (g_clearNativeWindow != nullptr) {
+        g_clearNativeWindow(window);
+    }
+    NotifyJavaSurface(0, 0);
     log::Emit("[MC4HOS] surface destroyed");
 }
 

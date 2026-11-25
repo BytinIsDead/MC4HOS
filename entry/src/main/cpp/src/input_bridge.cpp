@@ -8,6 +8,7 @@
  */
 
 #include "input_bridge.h"
+#include "game_surface.h"
 #include "jni_bridge.h"
 #include "log_capture.h"
 
@@ -94,6 +95,7 @@ void PostKey(int code, int action) {
         args[0].i = code;
         args[1].i = action;
         jni::CallStaticVoid(env, kBridgeClass, "dispatchKey", "(II)V", args);
+        surface::ForwardKey(code, action);
     });
 }
 
@@ -103,6 +105,7 @@ void PostMouseButton(int button, int action) {
         args[0].i = button;
         args[1].i = action;
         jni::CallStaticVoid(env, kBridgeClass, "dispatchMouseButton", "(II)V", args);
+        surface::ForwardMouseButton(button, action);
     });
 }
 
@@ -112,6 +115,7 @@ void PostMouseMove(float dx, float dy) {
         args[0].f = dx;
         args[1].f = dy;
         jni::CallStaticVoid(env, kBridgeClass, "dispatchMouseMove", "(FF)V", args);
+        surface::ForwardMouseMove(dx, dy);
     });
 }
 
@@ -123,6 +127,7 @@ void PostTouch(int id, float x, float y, int action) {
         args[2].f = y;
         args[3].i = action;
         jni::CallStaticVoid(env, kBridgeClass, "dispatchTouch", "(IFFI)V", args);
+        surface::ForwardTouch(id, x, y, action);
     });
 }
 

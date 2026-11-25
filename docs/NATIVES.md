@@ -9,12 +9,12 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 # Producing OpenHarmony Runtime & Native Components
 
-MC4HOS's launcher code is complete, but the **Java runtime** and the game's
-**native dependency stack** are not code this repository can ship: they are
-binaries of third-party projects (OpenJDK, LWJGL, OpenAL Soft) that each
-distributor builds from pristine upstream sources for the OpenHarmony
-targets. This document describes the pipeline and the exact layout the
-launcher expects. All builds happen **outside** this repository.
+MC4HOS includes source for its launcher, GLFW bridge and reproducible native
+builders. The **Java runtime and FreeType** come from pinned OpenHarmony runtime
+packs; LWJGL and OpenAL Soft are built from pinned upstream sources for the
+OpenHarmony targets. All are packaged at build time and generated binaries are
+not committed. This document describes the pipeline and the exact layout the
+launcher expects.
 
 > Toolchain base: the OpenHarmony NDK clang (`$OHOS_NDK/native/llvm/bin/`)
 > with sysroot `$OHOS_NDK/sysroot`, for **both** 64-bit targets:
@@ -26,42 +26,44 @@ launcher expects. All builds happen **outside** this repository.
 
 ## 1. Embedded OpenJDK (libjvm.so + JRE image)
 
-Targets: **OpenJDK 8, 17, 21 and 25** images for `aarch64-linux-ohos`; the
-separate x86_64 tree builds **21 and 25** for `x86_64-linux-ohos`. Java 25 is
-required by current Minecraft releases (26.x); 1.20.5–1.21.x need 21 and
-1.12.2 needs 8. The launcher selects an exact or newer major, never an older
-one, so Java 21 also covers 1.17–1.20.4.
+This HAP packages the dlopen-able native libraries for **OpenJDK 21** on both
+`aarch64-linux-ohos` and `x86_64-linux-ohos`. HarmonyOS's native-library policy
+allows one OpenJDK major in the flat `entry/libs/<abi>/` namespace, and
+`JavaRuntimeManager` uses Java 21 for every game requiring Java 21 or older.
+Minecraft releases requiring Java 25, including current 26.x releases, are
+rejected before account validation or downloads. LWJGL2 releases are rejected
+by launch preflight.
 
 ### aarch64 (prebuilt, pinned, bundled)
 
 The built-in catalog in
-`entry/src/main/ets/download/JavaRuntimeManager.ets` points at public
-community OpenHarmony builds of JDK 8/17/21/25. Every entry pins the archive
-size and SHA-256; downloads are rejected on any mismatch.
+`entry/src/main/ets/download/JavaRuntimeManager.ets` retains historical
+OpenHarmony pack references, but this build selects and extracts only the
+Java 21 pack because only that major has packaged natives. Every selected
+entry pins the archive size and SHA-256; downloads are rejected on any
+mismatch.
 
-At build time `scripts/fetch_bundled_jres.py` downloads those same pinned
-archives into `entry/src/main/resources/rawfile/jvm/` (gitignored), so the
-HAP carries all four aarch64 runtimes (~390 MB) and the app can extract them
-offline on first use. The lock file is
-`scripts/bundled-jres.lock.json`; `BUNDLE_JRES=0` skips the fetch for a
-smaller HAP that downloads packs instead. The pack archives are never
-committed (100 MB GitHub file limit and GPLv2+CE source-offer hygiene).
+At build time `scripts/fetch_bundled_jres.py` downloads the pinned archives
+into `entry/src/main/resources/rawfile/jvm/` (gitignored), and
+`scripts/bundle_jre_natives.py` extracts the Java 21 native libraries into
+`entry/libs/<abi>/`. The lock file is `scripts/bundled-jres.lock.json`;
+`BUNDLE_JRES=0` skips runtime fetching and expects the Java 21 natives to
+already exist in `entry/libs/`. Pack archives and generated natives are never
+committed (GitHub file limits and GPLv2+CE source-offer hygiene).
 
 ### x86_64 (built in this repository's CI)
 
-There is no public x86_64 OHOS JRE. A separate public repository,
+A separate public repository,
 [`BytinIsDead/openharmony-openjdk`](https://github.com/BytinIsDead/openharmony-openjdk),
 cross-compiles the same pinned upstream JDK sources and OHOS patch series for
 `x86_64-linux-ohos` and `aarch64-linux-ohos`. Its `jdk-ohos.yml` workflow
 builds Java 21/25 for both ABIs, uploads artifacts, and — when run with
 `publish = true` — publishes the packs plus `runtime-catalog.json` to the
-`jdk-ohos-v1` release. The launcher carries each pack's SHA-256 in
-`scripts/bundled-jres.lock.json` and verifies the download again at install
-time. The build scripts fetch and bundle the x86_64 packs from that release.
-See the repository README for the local build command and licensing
-requirements.
+`jdk-ohos-v1` release. MC4HOS selects the Java 21 pack for this build. The
+launcher carries its SHA-256 in `scripts/bundled-jres.lock.json` and verifies
+the download again at install time.
 
-Key configure details (both ABIs, OpenJDK 21/25 scheme):
+Key configure details (both ABIs, OpenJDK 21/25 build scheme; MC4HOS selects 21):
 
 - Cross-compile with the OHOS NDK clang, but keep autoconf's target OS as
   Linux/musl: `--openjdk-target=x86_64-unknown-linux-musl` (or
@@ -109,73 +111,97 @@ available.
 
 ## 2. Game native stack (`java.library.path`)
 
-Minecraft loads natives by name (`System.loadLibrary("lwjgl")`,
-`"openal"`). The launcher passes
-`<files>/mc4hos/natives/<mcVersion>/<abi>:<javaHome>/lib/server:<javaHome>/lib:…`
-as `-Djava.library.path`, where `<abi>` is `arm64-v8a` or `x86_64` (resolved
-from `Paths.deviceAbi()`), and the JDK directories are selected from the
-runtime's actual layout (`lib/server`, `lib/<arch>/server`, …). Build and
-deploy per ABI:
+HarmonyOS only permits `dlopen` from the installed HAP native-library
+directory. The launcher puts `applicationInfo.nativeLibraryPath` first in
+`java.library.path`; sandbox-extracted Minecraft natives are not loadable.
+The required flat files are packaged under `entry/libs/<abi>/`:
 
 | Library | Source | Notes |
 |---|---|---|
-| `liblwjgl.so` | LWJGL 3.3.x, `ant compile-native` adapted to OHOS clang | core bindings, both targets |
-| `liblwjgl_opengl.so` | LWJGL | GL bindings |
-| `liblwjgl_glfw.so` | LWJGL + **glfw-ohos shim** (§2.1) | window/input layer |
-| `libopenal.so` | OpenAL-Soft, cmake toolchain=ohos | audio; x86_64 has full JIT (NEON not required) |
-| `libGL.so` (optional) | gl4es (MIT) | desktop-GL → GLES translation for ≤1.12.2 pipelines |
+| `libmeowcraftbridge.so` | `entry/src/main/cpp/meowcraftbridge` + MC4HOS integration | GLFW semantics, EGL surface/context, input pumping |
+| `liblwjgl_343.so` | LWJGL 3.4.3 | generation-tagged core bindings |
+| `liblwjgl_343_opengl.so` | LWJGL 3.4.3 | desktop OpenGL bindings |
+| `liblwjgl_343_stb.so` | LWJGL 3.4.3 | image/font helpers |
+| `liblwjgl_tinyfd.so` | LWJGL 3.4.3 | file dialogs |
+| `libopenal.so` | OpenAL Soft 1.24.3 with OHAudio backend | spatial audio |
+| `libfreetype.so` | FreeType | font rasterization used by LWJGL |
 
-### 2.1 The GLFW/window shim (the key seam)
+`libmc4hos_core.so` publishes MC4HOS's existing `OHNativeWindow*` directly
+to `libmeowcraftbridge.so`; it does not create a second JVM or a second
+surface. The adapted LWJGL fat JAR routes GLFW to that bridge. Stock
+`org.lwjgl` artifacts are excluded from the Minecraft classpath so only the
+adapted provider is present.
 
-LWJGL's `liblwjgl_glfw.so` normally creates platform windows itself. On
-OpenHarmony the surface is owned by our XComponent, so you compile LWJGL's
-GLFW module against a thin **shim library** that implements the GLFW window
-surface on the existing `OHNativeWindow*` and surfaces input from
-`org.mc4hos.bridge.InputBridge` (built into `mc4hos-bridge.jar`, see §4).
-The shim reads its window handle from `PlatformBridge` state — native
-already hands the JVM the live XComponent geometry at startup
-(`onGameSurfaceCreated`). This is the same architectural seam pattern used
-by every non-Android mobile Java launcher; the implementation is
-straightforward GLFW surface plumbing and is *your* integration work.
+### 2.1 Reproducible builders
 
-### 2.2 Graphics pipeline mapping
+Build both 64-bit ABIs and stage the generated files directly into the entry
+module:
 
-- MC ≤ 1.16 era (LWJGL2/legacy GL): render through **gl4es** (`libGL.so`
-  exposing desktop GL 1.5/2.x over the device's GLES 3.1/3.2), EGL context
-  on the XComponent window.
-- MC ≥ 1.17 (LWJGL3 + GL core): either run the same gl4es translation
-  layer, or supply a GLES-native rendering path via the shim.
-- Vulkan path: the XComponent window is a standard `OHNativeWindow`;
-  `vkCreateAndroidSurfaceKHR`-equivalent OHOS extension
-  (`VK_OHOS_surface`) can be used by future shim versions.
+```bash
+sh scripts/native/build_stack.sh \
+  --sdk-native "$DEVECO_SDK_HOME/default/openharmony/native" \
+  --api 24
+python3 scripts/bundle_jre_natives.py
+python3 scripts/check_native_stack.py
+```
+
+The wrapper fetches LWJGL 3.4.3 at commit
+`30fac9b95f99cda97312232be25ba55297bf9951`, libffi 3.8.0 at commit
+`12ffd1f9dc56fcea79d2f742f424301ae668d663`, and the checksum-pinned OpenAL Soft
+1.24.3 archive. It builds the adapted fat JAR plus LWJGL core/OpenGL/STB/tinyfd
+and OpenAL for `arm64-v8a` and `x86_64`. Pass `--abi x86_64` (repeatable) to
+build only selected ABIs, `--work DIR` to relocate the source/build cache, and
+`--ninja FILE` when Ninja is not on `PATH`.
+
+Sources and intermediates stay under `.build/native-stack/` by default.
+Generated libraries are staged under `entry/libs/<abi>/`, and the adapted JAR
+under `entry/src/main/resources/rawfile/bridge/lwjgl-3.4.3.jar`; those output
+locations are gitignored. `build_hap.bat`, `build_hap.sh`, and CI run
+`check_native_stack.py` so a fresh checkout fails clearly instead of producing
+a HAP without the game runtime. The corresponding source pins, licenses and
+relinking instructions are recorded in [NOTICE.md](../NOTICE.md) and
+`scripts/licenses/`.
+
+### 2.2 Graphics pipeline
+
+The game launch path preloads system `libGLv4.so` with global visibility,
+selects `MEOWCRAFT_RENDERER=openglv4`, requests a core profile and disables
+Gallium threaded context by default (`GALLIUM_THREAD=0`). LWJGL capability
+guards remain enabled. The bridge's upstream GLES2 fallback is not sufficient
+for modern Minecraft, and no gl4es core backend is included in this build.
+Vulkan is not part of the current game launch path.
 
 ## 3. mc4hos-bridge.jar
 
 Compile the clean-room Java bridge in `entry/src/main/cpp/java/`:
 
 ```bash
-javac -source 8 -target 8 -d build \
-  entry/src/main/cpp/java/org/mc4hos/bridge/InputBridge.java \
-  entry/src/main/cpp/java/org/mc4hos/bridge/PlatformBridge.java \
-  entry/src/main/cpp/java/org/mc4hos/bridge/SelfTest.java
-jar cf mc4hos-bridge.jar -C build .
-hdc file send mc4hos-bridge.jar <sandbox>/bridge/
+python3 scripts/build_bridge_jar.py
 ```
 
-`JvmArgumentBuilder` prepends `bridge/mc4hos-bridge.jar` to the classpath
-automatically when the file exists.
+The generated `mc4hos-bridge.jar` is staged under
+`entry/src/main/resources/rawfile/bridge/`; do not copy it into the sandbox.
+
+`JvmArgumentBuilder` prepends both `bridge/mc4hos-bridge.jar` and the adapted
+`bridge/lwjgl-3.4.3.jar` to the game classpath. `DeployImport` stages both
+from HAP rawfiles atomically and refreshes them when their version marker
+changes; launch fails if either cannot be staged.
 
 ## 4. Sanity matrix
 
 | Artifact | Path in sandbox | Consumed by |
 |---|---|---|
 | bundled pack (in HAP) | `resources/rawfile/jvm/jre<major>-ohos-<abi>.zip` | `JavaRuntimeManager.installBundled()` (extracted on first use) |
-| libjvm.so | `jvm/<name>/lib/server/libjvm.so` or `jvm/<name>/jre/lib/<arch>/server/libjvm.so` | `jvm_loader.cpp` (dlopen) |
+| libjvm.so | HAP `libs/<abi>/` (the extracted runtime keeps its standard image layout) | `jvm_loader.cpp` (dlopen) |
 | runtime.json | `jvm/<name>/runtime.json` (homePath = normalized JRE root) | `JavaRuntimeManager.listInstalled()` |
 | mc4hos-bridge.jar | `bridge/mc4hos-bridge.jar` (ABI-independent bytecode) | classpath head |
-| liblwjgl*.so / libopenal.so | `natives/<mcVersion>/<abi>/` | `java.library.path` |
+| libmc4hos_core.so + libmeowcraftbridge.so | HAP `libs/<abi>/` | NAPI module and GLFW bridge |
+| liblwjgl*.so / libopenal.so / libfreetype.so | HAP `libs/<abi>/` | `java.library.path` |
+| lwjgl-3.4.3.jar | `bridge/lwjgl-3.4.3.jar` (staged from HAP) | adapted GLFW provider on classpath |
 | latest.log | `logs/latest.log` | Console tab + `hdc hilog` |
 
 Everything the game needs at runtime (client jar, libraries, assets) is
 downloaded by the launcher itself from official Mojang endpoints — nothing
-game-related is built or stored in this repository.
+game-related is built or stored in this repository. A version is installed
+only after its client, required libraries and asset objects succeed and the
+`.installed` marker is written.

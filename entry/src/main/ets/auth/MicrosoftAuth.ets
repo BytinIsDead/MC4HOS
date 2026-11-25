@@ -249,16 +249,25 @@ export class MicrosoftAuth {
       return null;
     }
 
+    const displayName: string = getStr(profileJson, 'name');
+    const uuid: string = getStr(profileJson, 'id');
+    if (displayName.length === 0 || uuid.length === 0) {
+      report('error', 'Minecraft services returned an incomplete profile');
+      return null;
+    }
+    const expiresAt: number = Date.now() + mcExpiresIn * 1000;
     const profile: AccountProfile = {
-      displayName: getStr(profileJson, 'name'),
-      uuid: getStr(profileJson, 'id'),
-      xuid: uhs,
-      mcTokenExpiresAtMs: Date.now() + mcExpiresIn * 1000
+      displayName: displayName,
+      uuid: uuid,
+      xuid: xstsXid,
+      mcTokenExpiresAtMs: expiresAt
     };
     const secrets: AuthSecrets = {
       msAccessToken: msAccessToken,
       msRefreshToken: msRefreshToken,
-      mcAccessToken: mcToken
+      mcAccessToken: mcToken,
+      mcTokenExpiresAtMs: expiresAt,
+      xuid: xstsXid
     };
     report('done', `Signed in as ${profile.displayName}`);
     return { profile: profile, secrets: secrets };
@@ -279,7 +288,7 @@ export class MicrosoftAuth {
     }
     const newAccess: string = getStr(json, 'access_token');
     const newRefresh: string = getStr(json, 'refresh_token', refreshToken);
-    if (newAccess.length === 0) {
+    if (newAccess.length === 0 || newRefresh.length === 0) {
       return null;
     }
     // Refresh the Minecraft services token as well.
@@ -290,7 +299,7 @@ export class MicrosoftAuth {
     };
     const xbl: TicketResponse =
       await MicrosoftAuth.xblRequest(XBL_AUTH_URL, xblProps, 'http://auth.xboxlive.com');
-    if (xbl.json === null) {
+    if (xbl.json === null || getStr(xbl.json, 'Token').length === 0) {
       return null;
     }
     const xstsProps: TicketProperties = {
@@ -306,12 +315,14 @@ export class MicrosoftAuth {
     if (uhs.length === 0) {
       uhs = MicrosoftAuth.firstUserHash(xbl.json);
     }
-    if (uhs.length === 0) {
-      Logger.warn(TAG, 'refresh: no user hash in XBL/XSTS response');
+    const xstsToken: string = getStr(xsts.json, 'Token');
+    const xuid: string = MicrosoftAuth.firstClaim(xsts.json, 'xid');
+    if (uhs.length === 0 || xstsToken.length === 0) {
+      Logger.warn(TAG, 'refresh: incomplete XBL/XSTS response');
       return null;
     }
     const loginPayload: Record<string, string> = {};
-    loginPayload['identityToken'] = `XBL3.0 x=${uhs};${getStr(xsts.json, 'Token')}`;
+    loginPayload['identityToken'] = `XBL3.0 x=${uhs};${xstsToken}`;
     const acceptHeaders: Record<string, string> = {};
     acceptHeaders['Accept'] = 'application/json';
     const mcResp = await postJson(MC_LOGIN_URL,
@@ -323,10 +334,17 @@ export class MicrosoftAuth {
     if (mcJson === null) {
       return null;
     }
+    const mcToken: string = getStr(mcJson, 'access_token');
+    const mcExpiresIn: number = getNum(mcJson, 'expires_in', 86400);
+    if (mcToken.length === 0 || mcExpiresIn <= 0) {
+      return null;
+    }
     return {
       msAccessToken: newAccess,
       msRefreshToken: newRefresh,
-      mcAccessToken: getStr(mcJson, 'access_token')
+      mcAccessToken: mcToken,
+      mcTokenExpiresAtMs: Date.now() + mcExpiresIn * 1000,
+      xuid: xuid
     };
   }
 
@@ -356,6 +374,10 @@ export class MicrosoftAuth {
   }
 
   private static firstUserHash(json: JsonObj): string {
+    return MicrosoftAuth.firstClaim(json, 'uhs');
+  }
+
+  private static firstClaim(json: JsonObj, key: string): string {
     const claims: JsonObj | null = getObj(json, 'DisplayClaims');
     if (claims === null) {
       return '';
@@ -365,7 +387,7 @@ export class MicrosoftAuth {
       return '';
     }
     const first = items[0] as JsonObj;
-    return getStr(first, 'uhs');
+    return getStr(first, key);
   }
 }
 

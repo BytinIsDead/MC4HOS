@@ -65,6 +65,7 @@ jobs:
   build:
     name: Build HAP (unsigned)
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     needs: verify
     outputs:
       version: ${{ steps.rel.outputs.version }}
@@ -75,6 +76,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
 
       # Tag pushes cut a release. Push a base tag (v1.0) to auto-increment
       # the patch, or a full tag (v1.0.7) to pin it. Releases are titled
@@ -205,11 +210,29 @@ jobs:
       - name: Package JRE native libraries
         run: python3 scripts/bundle_jre_natives.py
 
+      - name: Build pinned LWJGL and OpenAL native stack
+        run: |
+          sh scripts/native/build_stack.sh \
+            --sdk-native "$TOOLS_HOME/sdk/default/openharmony/native" \
+            --api 24
+
       - name: Build bridge jar
         run: python3 scripts/build_bridge_jar.py
 
+      - name: Verify staged runtime inputs
+        run: python3 scripts/check_native_stack.py
+
       - name: Build HAP (debug, unsigned)
-        run: hvigorw --mode module -p module=entry@default -p product=default assembleHap
+        run: |
+          set -euo pipefail
+          mkdir -p .build
+          hvigorw --mode module -p module=entry@default -p product=default assembleHap \
+            2>&1 | tee .build/hvigor-build.log
+          if grep -q 'BUILD FAILED' .build/hvigor-build.log; then
+            echo "::error::hvigor reported BUILD FAILED"
+            exit 1
+          fi
+          grep -q 'BUILD SUCCESSFUL' .build/hvigor-build.log
 
       - name: Collect HAPs
         run: |
@@ -220,6 +243,9 @@ jobs:
           for abi in arm64-v8a x86_64; do
             unzip -l out/*.hap | grep -q "libs/$abi/libjvm.so" \
               || { echo "::error::HAP is missing libs/$abi/libjvm.so"; exit 1; }
+          done
+          for hap in out/*.hap; do
+            python3 scripts/check_native_stack.py --hap "$hap"
           done
           ls -la out
 

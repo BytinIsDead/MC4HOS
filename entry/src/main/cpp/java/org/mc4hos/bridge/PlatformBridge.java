@@ -40,9 +40,9 @@ public final class PlatformBridge {
      * change, or creation after the VM already booted).
      */
     public static void onGameSurfaceChanged(int width, int height) {
-        surfaceWidth = width;
-        surfaceHeight = height;
-        surfaceReady = true;
+        surfaceWidth = Math.max(0, width);
+        surfaceHeight = Math.max(0, height);
+        surfaceReady = width > 0 && height > 0;
         System.out.println("[MC4HOS] PlatformBridge: surface " + width + "x" + height);
     }
 

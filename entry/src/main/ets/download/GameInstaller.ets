@@ -21,9 +21,9 @@ import { VersionJson, RuleSet, DEFAULT_ASSETS_BASE } from './VersionManifest';
  * Materializes a fully playable version tree: client jar, dependency
  * libraries (maven layout), asset index and hashed asset objects.
  *
- * Native libraries (LWJGL, OpenAL, GL translation) are NOT downloaded from
- * Mojang — they are OpenHarmony ARM64 builds deployed under
- * Paths.nativesVersionDir() by the runtime pack pipeline (see docs/NATIVES.md).
+ * Native libraries are not downloaded from Mojang. The HarmonyOS LWJGL,
+ * OpenAL and FreeType libraries are packaged in the HAP for both 64-bit ABIs
+ * (see docs/NATIVES.md).
  */
 
 const TAG: string = 'GameInstaller';
